@@ -1097,9 +1097,21 @@ addhost() {
 
 # AD Realm Setting Function
 krbconf(){
-    sudo python3 ~/.local/bin/configure_krb5.py $1 $2
+    echo "krbconf [IP_DC] [DC_HOSTNAME] [DOMAIN]"
+    echo -e "\nCONFIGURING HOSTS\n"
+    addhost $1 $2.$3
+    addhost $1 $3
+    echo "# --- DOMAIN \"$3\" CONFIGURATION ---" | sudo tee -a /etc/resolv.conf
+    echo "domain $3" | sudo tee -a /etc/resolv.conf
+    echo "nameserver $1" | sudo tee -a /etc/resolv.conf
+
+    echo -e "\nSYNCING TIME WITH \"$2.$3\"\n"
     sudo timedatectl set-ntp off
-    sudo rdate -n $2.$1
+    sudo ntpdate -s $2.$3
+    sudo rdate -n $2.$3
+
+    echo -e "\nCREATING KERBEROS REALM FOR DOMAIN \"$3\"\n"
+    sudo python3 ~/.local/bin/configure_krb5.py $3 $2
 }
 
 # SQLMap Scan Wrapper
