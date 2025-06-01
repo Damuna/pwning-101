@@ -1244,3 +1244,7 @@ ntlmtheft(){
     cd /home/damuna/TOOLS/ntlm_theft
     python3 ntlm_theft.py -g all -s $1 -f NTDOCS
 }
+
+wordscan(){
+    wpscan --api-token $wp_scan_api --url $1 --enumerate u,vp,vt,cb,dbe --rua --disable-tls-checks --no-banner -t 20
+}
