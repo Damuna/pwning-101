@@ -1282,3 +1282,13 @@ ntlmtheft(){
 wordscan(){
     wpscan --api-token $wp_scan_api --url $1 --enumerate u,vp,vt,cb,dbe --rua --disable-tls-checks --no-banner -t 20
 }
+
+#Ldap domain dump
+ldapdump(){
+    echo "Usage: ldapdump <DOMAIN\user> <password> <ip>"    
+    ldapdomaindump $1 $2 -o . $3
+    echo "Exctracting usernames and saving them in ~/machines/user.txt"
+    cat domain_users.json | grep -i samaccountname -A1 | grep -vi samaccountname | grep -v - | tr -d ' ' > ~/machines/user.txt
+    echo -e "\n[*] Info and Descriptions:"
+    cat domain_users.json | grep -Ei 'info|description' -A1
+}
