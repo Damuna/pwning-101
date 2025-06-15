@@ -2,7 +2,7 @@
 alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
 alias academy='sudo openvpn /home/damuna/Downloads/academy-regular.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
-
+alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
 # TTY upgrade
 tty()
     echo "script -qc /bin/bash /dev/null \n python3 -c 'import pty; pty.spawn(\"/bin/bash\")' \n CTRL+Z -> stty raw -echo; fg -> reset -> export TERM=xterm \n xterm for teminal type"
@@ -1283,12 +1283,38 @@ wordscan(){
     wpscan --api-token $wp_scan_api --url $1 --enumerate u,vp,vt,cb,dbe --rua --disable-tls-checks --no-banner -t 20
 }
 
-#Ldap domain dump
+# Ldap domain dump
 ldapdump(){
-    echo "Usage: ldapdump <DOMAIN\user> <password> <ip>"    
-    ldapdomaindump $1 $2 -o . $3
-    echo "Exctracting usernames and saving them in ~/machines/user.txt"
-    cat domain_users.json | grep -i samaccountname -A1 | grep -vi samaccountname | grep -v - | tr -d ' ' > ~/machines/user.txt
+    if [ $# -lt 3 ]; then
+        echo "Usage: ldapdump <DOMAIN\\user> <password> <ip>"
+        return 1
+    fi
+    
+    local domain_user="$1"
+    local password="$2"
+    local ip="$3"
+    
+    # Handle empty password case for anonymous authentication
+    if [ -z "$password" ]; then
+        ldapdomaindump -u "$domain_user" -o . "$ip"
+    else
+        ldapdomaindump -u "$domain_user" -p "$password" -o . "$ip"
+    fi
+    
+    echo "Extracting usernames and saving them in ~/machines/user.txt"
+    cat domain_users.json | grep -i samaccountname -A1 | grep -vi samaccountname | grep -v - | tr -d '>' | sort -u > ~/machines/user.txt
+    
     echo -e "\n[*] Info and Descriptions:"
     cat domain_users.json | grep -Ei 'info|description' -A1
 }
+
+# PFX Certificate & Key extraction
+pfx2key(){
+    filename=$(echo $1)
+    echo "pfx2key <pfx_file>\n"
+    openssl pkcs12 -in $1 -clcerts -nokeys -out "${filename%.*}.crt"
+    openssl pkcs12 -in $1 -nocerts -out /tmp/out.enc
+    openssl rsa -in /tmp/out.enc -out "${filename%.*}.key"; rm /tmp/out.enc
+    echo "\n SAVED ${filename%.*}.key and ${filename%.*}.crt"
+}
+    
