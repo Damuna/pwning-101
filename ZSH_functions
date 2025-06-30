@@ -1261,38 +1261,53 @@ addhost() {
 
 # AD Realm Setting Function
 krbconf(){
-    cidr_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
-    if [[ $1 =~ $cidr_regex ]]; then
-        genhosts $1
+    genhosts $1
 
-        echo -e "\nSEARCHING DC IP IN \"$1\"\n"
-        dc_ip=$(sudo nmap -p88 $1 --open -oN - | grep "open" | cut -d' ' -f2)
-        if [[ -z $dc_ip ]]; then
-            echo "DC WAS NOT FOUND IN \"$1\", SKIPPING REALM CONFIGURATION"
-            return 1
-        fi
+    echo -e "\nCHECKING DC IP\n"
+    dc_ip=$(sudo nmap -p88 $1 -n -Pn --disable-arp-ping -g 53 -T4 --open -oG - | awk '/88\/open/ {print $2}')
+    if [[ -z $dc_ip ]]; then
+        echo -e "DC NOT FOUND, SKIPPING REALM CONFIGURATION"
+        return 1
     fi
 
-    echo -e "\nSYNCING TIME WITH DC \"$1\"\n"
-    sudo timedatectl set-ntp off
-    sudo ntpdate -s $1
-    sudo rdate -n $1
+    if [[ $(echo $dc_ip | wc -l) != "1" ]]; then
+        echo -e "\nFOUND MULTIPLE DCs: \n"
+        echo $dc_ip | while read ip; do nxc smb $ip; done
+        read -r dc_ip\?"INPUT DC IP TO CONFIGURE DOMAIN: "
+    fi
 
-    genhosts $1
-    echo -e "\nADDING AD REALM AND NAMSERVER FOR DC \"$1\"\n"
-    nxc smb $1 --generate-krb5-file /tmp/krb5conf
+    echo -e "\nSYNCING TIME WITH DC \"$dc_ip\"\n"
+    sudo timedatectl set-ntp off
+    timeout 1 sudo ntpdate -s $dc_ip
+    timeout 1 sudo rdate -n $dc_ip
+
+    echo -e "\nADDING AD REALM FOR \"$dc_ip\"\n"
+    nxc smb $dc_ip --generate-krb5-file /tmp/krb5conf
+    if [[ ! -f /tmp/krb5conf ]]; then
+        echo -e "\nKB GENERATION FAILED, TRY AGAIN OR CHANGE DC\n"
+            return 1
+    fi
+
     dom=$(cat /tmp/krb5conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
     domchk=$(cat /etc/resolv.conf | grep "domain $dom")
-    if [[ -z $domchk ]]; then
-        echo "#---AD GENERATED---#\ndomain $dom\nnameserver $dc_ip" | sudo tee --append /etc/resolv.conf
-    fi
+    echo -e "\nADDING NS CONFIGURTATION FOR \"$dc_ip\" ON DOMAIN \"$dom\"\n"
 
+    if [[ -z $domchk ]]; then
+        echo "\n#---AD GENERATED---#\ndomain $dom\nnameserver $dc_ip\n" | sudo tee --append /etc/resolv.conf
+    fi
     if [[ -f /etc/krb5.conf ]]; then
         prev_dom=$(cat /etc/krb5.conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
-        if [[ ! -z $prev_dom && $prev_dom != $dom ]]; then
-            cat /tmp/krb5conf | tail -n 2 | sudo tee --append /etc/krb5.conf
-            rlm=$(cat /tmp/krb5conf | grep -i { -A4)
-            sudo awk -v text="$chk" '/\[realms\]/ {print; print "" text; next} 1' /etc/krb5.conf > tmp && sudo mv tmp /etc/krb5.conf
+        if [[ ! -z $prev_dom ]]; then
+            def_rlm=$(cat /tmp/krb5conf | grep -i default_realm | tr -d ' ')
+            sudo sed -i -e "s/    default_realm = $prev_dom/    $def_rlm/g" /etc/krb5.conf
+            sudo sed -i -e "s/    default_realm=$prev_dom/    $def_rlm/g" /etc/krb5.conf
+            cat /tmp/krb5conf | tail -n 2 | while read line; do grep -qxF "    $line" /etc/krb5.conf || echo "    $line" | sudo tee --append /etc/krb5.conf; done
+            rlm=$(cat /tmp/krb5conf | grep kdc | tail -n 1 | awk -F"=" '{print $2}')
+            blk=$(cat /tmp/krb5conf | grep -i { -A4)
+            rlm_chk=$(cat /etc/krb5.conf | grep -i $rlm)
+            if [[ -z $rlm_chk ]]; then
+                sudo awk -v text="$blk" '/\[realms\]/ {print; print "" text; next} 1' /etc/krb5.conf > tmp && sudo mv tmp /etc/krb5.conf
+            fi
         else
             sudo mv /tmp/krb5conf /etc/krb5.conf
         fi
@@ -1300,6 +1315,7 @@ krbconf(){
         sudo mv /tmp/krb5conf /etc/krb5.conf
     fi
 }
+
 
 # AD Host Mapping generator
 genhosts(){
@@ -1633,4 +1649,56 @@ bitmount(){
 
     echo -e "\nCD AND LISTING CONTENT\n"
     cd /media/bitlockermount && sudo ls -la .
+}
+
+
+# SMB share mount
+smbmount() {
+    local ip="" user="" pass="" share=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -u|--user)
+                user="$2"
+                shift 2
+                ;;
+            -p|--pass)
+                pass="$2"
+                shift 2
+                ;;
+            *)
+                if [[ -z "$ip" ]]; then
+                    ip="$1"
+                else
+                    echo "Unknown argument: $1"
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Check if IP is provided
+    if [[ -z "$ip" ]]; then
+        echo "Usage: smbmount <IP> -u <user> -p <pass>"
+        return 1
+    fi
+
+    # Ask user to select a share
+    vared -p "Select a share to mount: " -c share
+
+    # Create mount point and mount
+    local mount_point="/mnt/$share"
+    sudo mkdir -p "$mount_point"
+    sudo mount -t cifs "//$ip/$share" "$mount_point" -o username="$user",password="$pass"
+
+    # Check if mount succeeded
+    if mount | grep -q "$mount_point"; then
+        echo "Successfully mounted //$ip/$share at $mount_point"
+        cd $mount_point
+    else
+        echo "Failed to mount //$ip/$share"
+        return 1
+    fi
 }
