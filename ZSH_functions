@@ -1796,6 +1796,3 @@ smbmount() {
         return 1
     fi
 }
-
-
-
