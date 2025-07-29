@@ -687,7 +687,7 @@ techscan(){
         read -r pub\?"IS THE DOMAIN BEHIND CLOUDFLARE? (Y/N): "
         if [[ $pub =~ [Yy] ]]; then
             echo -e "\nCHECKING UNCOVERING & PUBLIC SUBDOMAINS\n"
-            /home/kali/TOOLS/CloakQuest3r/venv/bin/python3 /home/kali/TOOLS/CloakQuest3r/cloakquest3r.py $host
+            /home/damuna/TOOLS/CloakQuest3r/venv/bin/python3 /home/damuna/TOOLS/CloakQuest3r/cloakquest3r.py $host
         fi
 
         echo -e "\nNUCLEI HTTP SCANNING\n"
@@ -700,13 +700,11 @@ techscan(){
 }
 
 crawl(){
+        local target=$1
+        local cookie=${2:-"rand=rand"} 
         echo -e "------------------WEB CRAWLING----------------------\n"
         dom=$(echo $1 | unfurl format %d)
 
-        read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY=VAL2): "
-        if [[ -z $cookie ]]; then
-            cookie="rand=rand"
-        fi
         echo -e "\nGATHERING ENDPOINTS\n"
         gospider --no-redirect --cookie "$cookie" -t 5 -s $1 --sitemap -d 3 --subs --js > /tmp/crawled_$dom.txt
         cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -vE "\.css|\.js$|\.woff|\.woff2|\.ttf|\.png|\.jpg|\.jpeg|\.gif|\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -vif /usr/share/seclists/Discovery/Web-Content/web-all-content-types.txt
@@ -740,7 +738,7 @@ crawl(){
         cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
 
         echo -e "\nJS SECRET MINING\n"
-        cat /tmp/js_$dom.txt | while read line; do; /home/kali/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
+        cat /tmp/js_$dom.txt | while read line; do; /home/damuna/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
 
         echo -e "\nBROKEN LINK 404 HIJACKING\n"
         blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
@@ -792,10 +790,8 @@ select_extension() {
 filefuzz(){
     echo -e "-----------------FILE FUZZING------------------\n"
     dom=$(echo $1 | unfurl format %d)
-    read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
-    if [[ -z $cookie ]]; then
-        cookie="rand=rand"
-    fi
+    local target=$1
+    local cookie=${2:-"rand=rand"}
 
     echo -e "\nSEARCHING RAFT FILES\n"
     ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/raft-large-files.txt | while read line; do echo $1/$line; done
@@ -816,11 +812,10 @@ filefuzz(){
 
 # Directory Discovery
 dirfuzz(){
+    local target=$1
+    local cookie=${2:-"rand=rand"}
+
     echo -e "-----------------DIRECTORY FUZZING------------------\n"
-    read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
-    if [[ -z $cookie ]]; then
-        cookie="rand=rand"
-    fi
     echo -e "\nSEARCHING COMBINED DIRECTORIES\n"
     ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt | while read line; do echo $1/$line/; done
 
@@ -830,6 +825,10 @@ dirfuzz(){
 
 # TMUX Parallel Web Enumerator
 webenum() {
+  read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
+  if [[ -z $cookie ]]; then
+    cookie="rand=rand"
+  fi
   dom=$(openssl rand -hex 12)
   tmux new-session -d -s $dom -n "$1" "source ~/.zshrc; techscan $1; read"
   tmux split-window -v -t $dom "source ~/.zshrc; crawl $1; read"
@@ -979,55 +978,6 @@ vhost(){
         fi
     
     ffuf -mc all -ac -acs advanced -u $1 -c -w "$wd:FUZZ" -H "Host: FUZZ.$host" "${@:2}"
-}
-
-
-#Crawling/JS Scraping Function
-crawl(){
-        dom=$(echo $1 | unfurl format %d)
-
-        read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY=VAL2): "
-        if [[ -z $cookie ]]; then
-            cookie="rand=rand"
-        fi
-        echo -e "\nGATHERING ENDPOINTS\n"
-        gospider --no-redirect --cookie "$cookie" -t 5 -s $1 --sitemap -d 3 --subs --js > /tmp/crawled_$dom.txt
-        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -vE "\.css|\.js$|\.woff|\.woff2|\.ttf|\.png|\.jpg|\.jpeg|\.gif|\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -vif /usr/share/seclists/Discovery/Web-Content/web-all-content-types.txt
-
-        echo -e "\nQUERY STRINGS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -E "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | qsreplace FUZZ | awk '!seen[$0]++'
-
-        echo -e "\nFORM FIELDS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "form\]" | grep -vE "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++'
-
-        echo -e "\nSUBDOMAINS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[subdomains\]" | awk -F" " '{print $3}' | awk '!seen[$0]++'
-
-        echo -e "\nJS FILES\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[javascript\]" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' > /tmp/jstmp_$dom.txt
-        while read line; do
-            type=$(curl -s $line -I | grep -i Content-Type | awk -F" " '{print $2}' | head -n 1)
-            if [[ $type =~ "javascript" ]]; then
-                echo $line | anew -q /tmp/js_$dom.txt
-            fi
-        done < /tmp/jstmp_$dom.txt
-
-        echo -e "\nEXTRACTING COMMENTS\n"
-        ReconSpider.py $1 &>/dev/null
-        cat results.json | jq '.comments[]'
-
-        echo -e "\nEXTRACING E_MAILS\n"
-        cat results.json | jq '.emails[]'
-
-        echo -e "\nJS LINK MINING\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
-
-        echo -e "\nJS SECRET MINING\n"
-        cat /tmp/js_$dom.txt | while read line; do; ~/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
-        rm /tmp/js*
-        
-        echo -e "\nBROKEN LINK 404 HIJACKING\n"
-        blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
 }
 
 
