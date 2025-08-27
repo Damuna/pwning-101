@@ -4,6 +4,7 @@ alias academy='sudo openvpn /home/damuna/Downloads/academy-regular.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
 alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
 alias pygpoabuse="/home/damuna/TOOLS/pyGPOAbuse/venv/bin/python3 /home/damuna/TOOLS/pyGPOAbuse/pygpoabuse.py"
+alias randstr="openssl rand -hex 12"
 # TTY upgrade
 tty(){
     echo "script -qc /bin/bash /dev/null \n python3 -c 'import pty; pty.spawn(\"/bin/bash\")' \n CTRL+Z -> stty raw -echo; fg -> reset -> export TERM=xterm \n xterm for teminal type"
@@ -283,8 +284,10 @@ nscan(){
         ldapsearch -H ldap://$1:$2 -x -s base namingcontexts
     fi
     
-    if [[ "$service" == "dns" ]]; then        
+    if [[ "$service" == "dns" ]]; then  
         read -r ad_resp\?"IS THE DNS SERVER HANDLING AN ACTIVE DIRECTORY? (Y/N): "
+        echo -e "\nREAD DOMAIN FROM REVERSE LOOKUP:\n"
+        dig -p $2 -x $1 @$1    
 
 	    while true; do
         	read -r dnsdom\?"INPUT A DOMAIN TO ENUMERATE (CTRL-C TO EXIT): "
@@ -292,30 +295,30 @@ nscan(){
                     rm /tmp/ns_$dnsdom.txt /tmp/zones_$dnsdom.txt &>/dev/null
                     if [[ $ad_resp =~ [Yy] ]]; then
                         echo -e "\nCHECKING AD RECORDS WITH DIG\n"
-                        dig -t _gc._tcp.lab.$dnsdom @$1 -p$2
-                        dig -t _ldap._tcp.lab.$dnsdom @$1 -p$2
-                        dig -t _kerberos._tcp.lab.$dnsdom @$1 -p$2
-                        dig -t _kpasswd._tcp.lab.$dnsdom @$1 -p $2
+                        dig -t _gc._tcp.lab.$dnsdom @$1 -p $2 
+                        dig -t _ldap._tcp.lab.$dnsdom @$1 -p $2 
+                        dig -t _kerberos._tcp.lab.$dnsdom @$1 -p $2 
+                        dig -t _kpasswd._tcp.lab.$dnsdom @$1 -p $2 
 
                         echo -e "\nCHECKING NMAP SRV-ENUM RECORDS\n"
             		    sudo nmap -Pn -n -sUV -p$2 --script dns-srv-enum --script-args dns-srv-enum.domain=$dnsdom $1
                     fi
 
                     echo -e "\nREQUESTING \"NS\" RECORDS FOR \"$dnsdom\"\n"
-                    ns_records=$(dig ns $dnsdom @$1 -p $2 +short) && echo $ns_records
+                    ns_records=$(dig ns $dnsdom @$1 -p $2 ) && echo $ns_records
                     ref_chk=$(dig ns $dnsdom @$1 -p $2 | grep REFUSED)
 
                     if [[ ! -z $ref_chk || -z $ns_records ]]; then
                         echo -e "\nREQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig a $dnsdom @$1 -p $2 +short
-                        dig aaaa $dnsdom @$1 -p $2 +short
+                        dig a $dnsdom @$1 -p $2 
+                        dig aaaa $dnsdom @$1 -p $2 
 
                         echo -e "\nREQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig mx $dnsdom @$1 -p $2 +short
-                        dig txt $dnsdom @$1 -p $2 +short
+                        dig mx $dnsdom @$1 -p $2 
+                        dig txt $dnsdom @$1 -p $2 
 
                         echo -e "\nREQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig cname $dnsdom @$1 -p $2 +short
+                        dig cname $dnsdom @$1 -p $2 
 
                         if [[ ! -z $ns_records ]]; then
                             echo -e "NS REQUEST WAS REFUSED, ATTEMPTING ZONE TRANSFER OVER DNS IP\n"
@@ -336,7 +339,7 @@ nscan(){
                     if [[ ! -z $ns_records && -z $ref_chk ]]; then
                         echo $ns_records > /tmp/zones_$dnsdom.txt && touch /tmp/ns_$dnsdom.txt
                         while read zone; do
-                            ip_chk=$(dig a ${zone%.} @$1 +short)
+                            ip_chk=$(dig a ${zone%.} @$1 )
                             if [[ $ip_chk == "127.0.0.1" || -z $ip_chk ]]; then 
                                 echo $1 >> /tmp/ns_$dnsdom.txt
                             else
@@ -347,19 +350,19 @@ nscan(){
 
                         echo -e "\nREQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig a $dnsdom @$zone -p $2 +short
-                            dig aaaa $dnsdom @$zone -p $2 +short
+                            dig a $dnsdom @$zone -p $2 
+                            dig aaaa $dnsdom @$zone -p $2 
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\nREQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig mx $dnsdom @$zone -p $2 +short
-                            dig txt $dnsdom @$zone -p $2 +short
+                            dig mx $dnsdom @$zone -p $2 
+                            dig txt $dnsdom @$zone -p $2 
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\nREQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig cname $dnsdom @$zone -p $2 +short
+                            dig cname $dnsdom @$zone -p $2 
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\nATTEMPTING ZONE TRANSFER OVER ALL ZONES\n"
@@ -370,6 +373,7 @@ nscan(){
                                 break
                             fi
                         done < /tmp/ns_$dnsdom.txt
+                        
                         if [[ -z $axfr_resp ]]; then
                             echo -e "\nZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                             cur=$(pwd) && cd ~/TOOLS/subbrute
@@ -1299,7 +1303,7 @@ addhost() {
 }
 
 
-# AD Realm Setting Function
+# AD Realm Setting Function kerberos configuration
 krbconf(){
     genhosts $1
 
@@ -1367,19 +1371,19 @@ genhosts(){
     rm /tmp/hostsfile
 }
 
-# SQLMap Scan Wrapper
-sqlscan(){ 
+sqlscan(){
     echo -e "\nSCANNING REQUEST \"$1\" FOR SQL INJECTION WITH ALL METHODS\n"
     echo -e "----------------------------------"
-    cat $1
+    cat "$1"
     echo -e "----------------------------------"
-    read -p "Do you want to append '--smart' to sqlmap to test only if heuristics are positive? (y/n): " choice
+    echo -n "Do you want to append '--smart' to sqlmap to test only if heuristics are positive? (y/n): "
+    read choice
     case "$choice" in
         y|Y|yes|YES)
-            sqlmap -r $1 --level 5 --risk 3 --dbs --smart --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment,equaltolike,escapequotes -v 2
+            sqlmap -r "$1" --level 5 --risk 3 --dbs --smart --privileges --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment
             ;;
         *)
-            sqlmap -r $1 --level 5 --risk 3 --dbs --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment,equaltolike,escapequotes -v 2
+            sqlmap -r "$1" --level 5 --risk 3 --dbs --privileges --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment,equaltolike
             ;;
     esac
 }
@@ -1770,3 +1774,76 @@ smbmount() {
         return 1
     fi
 }
+
+# Hashcat cracking
+hashcrack() {
+    local hash_file="$1"
+    local wordlist="${2:-$HOME/WORDLISTS/rockyou.txt}"
+
+    # --- 1. Validate inputs ---
+    if [[ -z "$hash_file" ]]; then
+        echo "[!] Error: You must provide a hash file." >&2
+        echo "Usage: hashcrack <hash_file> [wordlist_file]" >&2
+        return 1
+    fi
+    if [[ ! -f "$hash_file" ]]; then
+        echo "[!] Error: Hash file not found at '$hash_file'" >&2
+        return 1
+    fi
+    if [[ ! -f "$wordlist" ]]; then
+        echo "[!] Error: Wordlist not found at '$wordlist'" >&2
+        return 1
+    fi
+
+    # --- PHASE 1: Get all suggested modes and store them in an array ---
+    echo "[*] Getting hash mode suggestions from hashcat..."
+    local suggested_modes_string
+    # We run hashcat once just to get the suggestions.
+    suggested_modes_string=$(hashcat "$hash_file" "$wordlist" 2>&1 | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ' | paste -sd ' ' -)
+
+    if [[ -z "$suggested_modes_string" ]]; then
+        echo "[!] No hash mode suggestions found. Please check your hash file or hashcat's output." >&2
+        return 1
+    fi
+
+    local -a modes_array
+    read -r -A modes_array <<< "$suggested_modes_string" # For Zsh, -A is often used. For Bash, -a. Let's make it compatible.
+    
+    # A more universally compatible way for both shells:
+    local modes_array=("${(@s/ /)suggested_modes_string}") # Zsh specific way
+    if [[ -n "$BASH_VERSION" ]]; then
+      read -r -a modes_array <<< "$suggested_modes_string" # Bash specific way
+    fi
+
+
+    echo "[*] Found suggested hash modes to try: ${modes_array[*]}"
+
+    # --- PHASE 2: Iterate through the array and run hashcat for each mode ---
+    for mode in "${modes_array[@]}"; do
+        echo
+        echo "============================================================"
+        echo "[*] Trying hash mode: $mode"
+        echo "============================================================"
+
+        hashcat -m "$mode" "$hash_file" "$wordlist" --force
+
+        # Check for cracked hashes after the run is complete.
+        local cracked
+        cracked=$(hashcat -m "$mode" --show "$hash_file")
+
+        if [[ -n "$cracked" ]]; then
+            echo
+            echo "[+] SUCCESS! Hash cracked with mode: $mode"
+            echo "[+] Cracked hash(es):"
+            echo "$cracked"
+            return 0 # Success! Exit the function.
+        else
+            echo "[-] Hash not cracked with mode: $mode. Trying next mode..."
+        fi
+    done
+
+    echo
+    echo "[!] Exhausted all suggested hash modes. The hash could not be cracked with the provided wordlist."
+    return 1
+}
+
