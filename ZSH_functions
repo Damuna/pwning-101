@@ -1,3 +1,4 @@
+
 #Program aliases
 alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
 alias academy='sudo openvpn /home/damuna/Downloads/academy-regular.ovpn'
@@ -285,47 +286,47 @@ nscan(){
     fi
     
     if [[ "$service" == "dns" ]]; then  
-        read -r ad_resp\?"IS THE DNS SERVER HANDLING AN ACTIVE DIRECTORY? (Y/N): "
-        echo -e "\nREAD DOMAIN FROM REVERSE LOOKUP:\n"
-        dig -p $2 -x $1 @$1    
+
+        echo -e "\n[+] PTR DOMAIN RECORDS OF NS/INTERNAL IPs\n"
+        dnsrecon -r $1/30 -n $1
+        dnsrecon -r 127.0.0.0/24 -n $1
+        dnsrecon -r 127.0.1.0/24 -n $1
+        dnsrecon -r 192.168.0.0/24 -n $1
+        dnsrecon -r 10.0.0.0/24 -n $1
+        dnsrecon -r 172.16.0.0/24 -n $1
 
 	    while true; do
-        	read -r dnsdom\?"INPUT A DOMAIN TO ENUMERATE (CTRL-C TO EXIT): "
+        	read -r dnsdom\?"[+] INPUT A DOMAIN TO ENUMERATE (CTRL-C TO EXIT): "
         	if [[ ! -z $dnsdom ]]; then
                     rm /tmp/ns_$dnsdom.txt /tmp/zones_$dnsdom.txt &>/dev/null
-                    if [[ $ad_resp =~ [Yy] ]]; then
-                        echo -e "\nCHECKING AD RECORDS WITH DIG\n"
-                        dig -t _gc._tcp.lab.$dnsdom @$1 -p $2 
-                        dig -t _ldap._tcp.lab.$dnsdom @$1 -p $2 
-                        dig -t _kerberos._tcp.lab.$dnsdom @$1 -p $2 
-                        dig -t _kpasswd._tcp.lab.$dnsdom @$1 -p $2 
+                    echo -e "\n[+] REQUESTING AD DOMAIN RECORDS\n"
+                    nmap --script dns-srv-enum --script-args "dns-srv-enum.domain='$dnsdom'"
 
-                        echo -e "\nCHECKING NMAP SRV-ENUM RECORDS\n"
-            		    sudo nmap -Pn -n -sUV -p$2 --script dns-srv-enum --script-args dns-srv-enum.domain=$dnsdom $1
-                    fi
-
-                    echo -e "\nREQUESTING \"NS\" RECORDS FOR \"$dnsdom\"\n"
-                    ns_records=$(dig ns $dnsdom @$1 -p $2 ) && echo $ns_records
-                    ref_chk=$(dig ns $dnsdom @$1 -p $2 | grep REFUSED)
+                    echo -e "\n[+] REQUESTING \"NS\" RECORDS FOR \"$dnsdom\"\n"
+                    ns_records=$(dig ns $dnsdom @$1 -p $2 +short | grep -v "timed out") && echo $ns_records
+                    ref_chk=$(dig ns $dnsdom @$1 -p $2 | grep REFUSED | grep -v "timed out")
 
                     if [[ ! -z $ref_chk || -z $ns_records ]]; then
-                        echo -e "\nREQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig a $dnsdom @$1 -p $2 
-                        dig aaaa $dnsdom @$1 -p $2 
+                        echo -e "\n[+] REQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        dig a $dnsdom @$1 -p $2 +short
+                        dig aaaa $dnsdom @$1 -p $2 +short
 
-                        echo -e "\nREQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig mx $dnsdom @$1 -p $2 
-                        dig txt $dnsdom @$1 -p $2 
+                        echo -e "\n[+] REQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        dig mx $dnsdom @$1 -p $2 +short
+                        dig txt $dnsdom @$1 -p $2 +short
 
-                        echo -e "\nREQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig cname $dnsdom @$1 -p $2 
+                        echo -e "\n[+] REQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        dig cname $dnsdom @$1 -p $2 +short
+
+                        echo -e "\n[+] REQUESTING \"ANY\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        dig any $dnsdom @$1 -p $2 +short
 
                         if [[ ! -z $ns_records ]]; then
-                            echo -e "NS REQUEST WAS REFUSED, ATTEMPTING ZONE TRANSFER OVER DNS IP\n"
+                            echo -e "[+] NS REQUEST WAS REFUSED, ATTEMPTING ZONE TRANSFER OVER DNS IP\n"
                             axfr_resp=$(dig axfr $dnsdom @$1 -p $2 | grep $dnsdom --color=never | tail -n +2)
 
                             if [[ -z $axfr_resp ]]; then
-                                echo -e "\nZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
+                                echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                                 echo $1 > /tmp/ns_$dnsdom.txt
                                 cur=$(pwd) && cd ~/TOOLS/subbrute
                                 python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
@@ -339,7 +340,7 @@ nscan(){
                     if [[ ! -z $ns_records && -z $ref_chk ]]; then
                         echo $ns_records > /tmp/zones_$dnsdom.txt && touch /tmp/ns_$dnsdom.txt
                         while read zone; do
-                            ip_chk=$(dig a ${zone%.} @$1 )
+                            ip_chk=$(dig a ${zone%.} @$2 +short)
                             if [[ $ip_chk == "127.0.0.1" || -z $ip_chk ]]; then 
                                 echo $1 >> /tmp/ns_$dnsdom.txt
                             else
@@ -348,34 +349,38 @@ nscan(){
                         done < /tmp/zones_$dnsdom.txt
                         cat /tmp/ns_$dnsdom.txt | sort -u > /tmp/tmp_ns_$dnsdom.txt && mv /tmp/tmp_ns_$dnsdom.txt /tmp/ns_$dnsdom.txt
 
-                        echo -e "\nREQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
+                        echo -e "\n[+] REQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig a $dnsdom @$zone -p $2 
-                            dig aaaa $dnsdom @$zone -p $2 
+                            dig a $dnsdom @$zone -p $2 +short
+                            dig aaaa $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\nREQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
+                        echo -e "\n[+] REQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig mx $dnsdom @$zone -p $2 
-                            dig txt $dnsdom @$zone -p $2 
+                            dig mx $dnsdom @$zone -p $2 +short
+                            dig txt $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\nREQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
+                        echo -e "\n[+] REQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig cname $dnsdom @$zone -p $2 
+                            dig cname $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\nATTEMPTING ZONE TRANSFER OVER ALL ZONES\n"
+                        echo -e "\n[+] REQUESTING \"ANY\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            axfr_resp=$(dig axfr $dnsdom @$zone -p $2 | grep $dnsdom --color=never | tail -n +2)
+                            dig any $dnsdom @$zone -p $2 +short
+                        done < /tmp/ns_$dnsdom.txt
+
+                        echo -e "\n[+] ATTEMPTING ZONE TRANSFER OVER ALL ZONES\n"
+                        while read zone; do
+                            axfr_resp=$(dig axfr $dnsdom @$zone -p $2 | grep $dnsdom --color=never | tail -n +2 | grep -v "timed out")
                             if [[ ! -z $axfr_resp ]]; then
                                 echo $axfr_resp
                                 break
                             fi
                         done < /tmp/ns_$dnsdom.txt
-                        
                         if [[ -z $axfr_resp ]]; then
-                            echo -e "\nZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
+                            echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                             cur=$(pwd) && cd ~/TOOLS/subbrute
                             python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                             cd $cur
@@ -384,7 +389,7 @@ nscan(){
         	fi
 	    done
 
-        echo -e "\nMSF ENUMERATION\n"
+        echo -e "\n[+] MSF ENUMERATION\n"
         msfconsole -q -x "use auxiliary/scanner/dns/dns_amp; set RHOSTS $1; set RPORT $2; exploit; exit"
         msfconsole -q -x "use auxiliary/gather/enum_dns; set RHOSTS $1; set RPORT $2; exploit; exit"
     fi
@@ -672,35 +677,11 @@ techscan(){
             fi
         fi
 
-        echo -e "\nCHECKING IF VULNERABLE TO SHORT-SCANNING...\n"
-        chk=$(sns -u $1 --check | grep -v "Target is not vulnerable")
-        if [[ ! -z $chk ]]; then
-            echo -e "TARGET IS VULNERABLE, DISCOVERING PATHS VIA SNS"
-            sns -u $1 -s -t 25
-        fi
-
-        echo -e "\nFINGERPRINTING VIA HTTPX\n"
-        echo $1 | httpx -random-agent -fr -mc 200 -silent -sc -server -title -cdn -cname
-
         echo -e "\nCHECKING WAF PRESENCE\n"
         wafme0w -t $1 --no-warning --concurrency 15
 
         echo -e "\nTECHNOLOGY SCANNING\n"
         whatweb -a 3 $1
-
-        read -r pub\?"IS THE DOMAIN BEHIND CLOUDFLARE? (Y/N): "
-        if [[ $pub =~ [Yy] ]]; then
-            echo -e "\nCHECKING UNCOVERING & PUBLIC SUBDOMAINS\n"
-            /home/damuna/TOOLS/CloakQuest3r/venv/bin/python3 /home/damuna/TOOLS/CloakQuest3r/cloakquest3r.py $host
-        fi
-
-        echo -e "\nNUCLEI HTTP SCANNING\n"
-        nuclei -up &>/dev/null && nuclei -ut &>/dev/null
-        nuclei -rl 15 -silent -t http/ -u $1
-
-        echo -e "\nNIKTO & NMAP SCANNING\n"
-        sudo nmap -Pn -sV --script="http-enum","http-vuln-*","http-webdav-*","http-tplink-*","http-svn-*","http-trace","http-shellshock","http-put","http-ntlm-*","http-methods","http-iis-*","http-git","http-drupal-*","http-errors","http-cors","http-config-*","http-comments-*","ssl-*","http-apache-*" -p$port $host
-        nikto -h $host:$port -Tuning b
 }
 
 crawl(){
@@ -789,29 +770,42 @@ select_extension() {
   done
 }
 
-
 # File Discovery
 filefuzz(){
+    echo -e "----------------\nCHECKING SHORT-SCANNING...-------------\n"
+    chk=$(sns -u $1 --check | grep -v "Target is not vulnerable")
+    if [[ ! -z $chk ]]; then
+        echo -e "TARGET IS VULNERABLE, DISCOVERING PATHS VIA SNS"
+        sns -u $1 -s -t 25
+    fi
     echo -e "-----------------FILE FUZZING------------------\n"
     dom=$(echo $1 | unfurl format %d)
     local target=$1
     local cookie=${2:-"rand=rand"}
 
-    echo -e "\nSEARCHING RAFT FILES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/raft-large-files.txt | while read line; do echo $1/$line; done
+    echo -e "\n----------------RECURSIVE FILE FUZZING---------------------\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/filefuzz.txt 
+    
+    echo -e "\n----------------NON RECURSIVE FILE FUZZING---------------------\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/filefuzz.txt 
 
-    echo -e "\nSEARCHING GENERIC FILES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w ~/WORDLISTS/common_content.txt | while read line; do echo $1/$line; done
-
-    echo -e "\nNUCLEI FILE EXPOSURE\n"
+    echo -e "\n--------------------NUCLEI FILE EXPOSURE----------------------------\n"
     nuclei -up &>/dev/null && nuclei -ut &>/dev/null
     nuclei -rl 15 -silent -u $1 -t http/exposures -H "Cookie: $cookie"
+    }
 
+# Extension Fuzzing
+extfuzz(){
     select_extension
-    echo -e "\nPERFORMING EXTENSION FUZZING\n"
+    echo -e "\n--------------------RECURSIVE EXTENSION FUZZING------------------\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /tmp/endpoints_$dom.txt -e $ext | while read line; do echo $1/$line; done
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext | while read line; do echo $1/$line; done
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /tmp/endpoints_$dom.txt -e $ext
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext
+
+    echo -e "\n--------------------NON RECURSIVE EXTENSION FUZZING------------------\n"
+    urlgen $1
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /tmp/endpoints_$dom.txt -e $ext
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext 
 }
 
 # Directory Discovery
@@ -819,42 +813,36 @@ dirfuzz(){
     local target=$1
     local cookie=${2:-"rand=rand"}
 
-    echo -e "-----------------DIRECTORY FUZZING------------------\n"
-    echo -e "\nSEARCHING COMBINED DIRECTORIES\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt | while read line; do echo $1/$line/; done
+    echo -e "-----------------RECURSIVE DIRECTORY FUZZING------------------\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
+    
+    echo -e "-----------------NON RECURSIVE DIRECTORY FUZZING------------------\n"
+    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
 
-    echo -e "\nSEARCHING COMBINED WORDS\n"
-    ffuf -H "Cookie: $cookie" -s -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt | while read line; do echo $1/$line/; done
 }
 
-# TMUX Parallel Web Enumerator
+#TMUX web scan
 webenum() {
   read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
   if [[ -z $cookie ]]; then
     cookie="rand=rand"
   fi
-  dom=$(openssl rand -hex 12)
-  tmux new-session -d -s $dom -n "$1" "source ~/.zshrc; techscan $1; read"
-  tmux split-window -v -t $dom "source ~/.zshrc; crawl $1; read"
-  tmux split-window -h -t $dom:0.0 "source ~/.zshrc; dirfuzz $1; read"
-  tmux split-window -h -t $dom:0.1 "source ~/.zshrc; filefuzz $1; read"
-  tmux select-layout -t $dom tiled
-  tmux attach -t $dom
 
-  # Check if the server is IIS and add the scanner if true
-  if curl -sI "http://$1" | grep -i "Server:" | grep -i "IIS" >/dev/null; then
-    msf_command="use auxiliary/scanner/http/iis_shortname_scanner; set RHOSTS $1"
-    
-    # Add VHOST if provided
-    if [[ -n "$vhost" ]]; then
-      msf_command="$msf_command; set VHOST $vhost"
-    fi
-    
-    tmux split-window -v -t $dom "source ~/.zshrc; msfconsole -q -x '$msf_command; run; exit'; read"
-  fi
-  
-  tmux select-layout -t $dom tiled
-  tmux attach -t $dom
+  dom=$(openssl rand -hex 12)
+
+  # Create detached session first
+  tmux new-session -d -s "$dom" -n "$1" "source ~/.zshrc; techscan $1; crawl $1; read"
+
+  # Add the other panes
+  tmux split-window -h -t "$dom:0.0" "source ~/.zshrc; dirfuzz $1; read"
+  tmux split-window -h -t "$dom:0.1" "source ~/.zshrc; filefuzz $1; read"
+  tmux split-window -v -t "$dom:0.2" "source ~/.zshrc; extfuzz $1; read"
+
+  # Arrange layout
+  tmux select-layout -t "$dom" tiled
+
+  # Attach to session
+  tmux attach -t "$dom"
 }
 
 
@@ -862,7 +850,7 @@ webenum() {
 apifuzz(){
     echo -e "\nLAUNCHING KITERUNNER ON TARGET\n"
     kr scan $1/ -w ~/TOOLS/WORDLISTS/routes-large.kite
-}
+}<?php system("REV_SHELL"); ?>
 
 bckfile(){
     echo -e "\nSEARCHING BACKUPS OF FILE \"$1\"\n"
@@ -1499,18 +1487,30 @@ osscan(){
     cd $cur
 }
 
-
 # Quick python venv spawner
 pyenv(){
     echo -e "\nSPAWNING VIRTUAL PYTHON3 ENVIRONMENT\n"
     python3 -m venv venv
     source venv/bin/activate
+
     if [[ -f ./requirements.txt ]]; then
         python3 -m pip install -r requirements.txt
     fi
-    which python3
-    pwd
+
+    PY_BIN="$(which python3)"
+    PROJECT_DIR="$(pwd)"
+    DEFAULT_NAME="$(basename "$PROJECT_DIR")"
+    TOOL_NAME="$(basename "$PROJECT_DIR")"
+
+    # Ask which script should be the entrypoint
+    read -p "Enter script filename to run [default: main.py]: " SCRIPT_NAME
+    SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
+
+    # Create alias in .zshrc
+    echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
+    echo "✅ Alias '${TOOL_NAME}' added. Run 'source ~/.zshrc' to use it."
 }
+
 
 #Responder Server
 respond(){
