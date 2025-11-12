@@ -1758,20 +1758,27 @@ pyenv() {
         python3 -m pip install -r requirements.txt
     fi
 
-    PY_BIN="$(which python3)"
-    PROJECT_DIR="$(pwd)"
-    TOOL_NAME="$(basename "$PROJECT_DIR")"
+    # Ask if the user wants to create an alias
+    echo -n "Do you want to create a shell alias for this project? (y/N): "
+    read CREATE_ALIAS
 
-    # Ask which script should be the entrypoint
-    echo -n "Enter script filename to run [default: main.py]: "
-    read SCRIPT_NAME
-    SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
+    if [[ "$CREATE_ALIAS" =~ ^[Yy]$ ]]; then
+        PY_BIN="$(which python3)"
+        PROJECT_DIR="$(pwd)"
+        TOOL_NAME="$(basename "$PROJECT_DIR")"
 
-    # Create alias in .zshrc
-    echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
-    echo "✅ Alias '${TOOL_NAME}' added. Run 'source ~/.zshrc' to use it."
+        # Ask which script should be the entrypoint
+        echo -n "Enter script filename to run [default: main.py]: "
+        read SCRIPT_NAME
+        SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
+
+        # Create alias in .zshrc
+        echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
+        echo "✅ Alias '${TOOL_NAME}' added. Run 'source ~/.zshrc' to use it."
+    else
+        echo "Skipping alias creation."
+    fi
 }
-
 
 
 #Responder Server
