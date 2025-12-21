@@ -858,10 +858,10 @@ filefuzz(){
     local cookie=${2:-"rand=rand"}
 
     echo -e "\n----------------RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -t 15 -w /home/damuna/wordlists/filefuzz.txt 
     
     echo -e "\n----------------NON RECURSIVE FILE FUZZING---------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/filefuzz.txt 
+    ffuf -H "Cookie: $cookie" -mc all -fc 404,400,503,429,500 -ac -acs advanced -ic -u $1/FUZZ -c -t 15 -w /home/damuna/wordlists/filefuzz.txt 
 
     echo -e "\n--------------------NUCLEI FILE EXPOSURE----------------------------\n"
     nuclei -up &>/dev/null && nuclei -ut &>/dev/null
@@ -873,10 +873,10 @@ extfuzz(){
     select_extension
     echo -e "\n--------------------RECURSIVE EXTENSION FUZZING------------------\n"
     urlgen $1
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -r -ic -u $1/FUZZ -c -t 15 -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext
 
     echo -e "\n--------------------NON RECURSIVE EXTENSION FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -ic -u $1/FUZZ -c -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext 
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,503,429,404,500 -ac -acs advanced -ic -u $1/FUZZ -c -t 15 -w /home/damuna/wordlists/combined_words_no_dot.txt -e $ext 
 }
 
 # Directory Discovery
@@ -885,10 +885,10 @@ dirfuzz(){
     local cookie=${2:-"rand=rand"}
 
     echo -e "-----------------RECURSIVE DIRECTORY FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -r -ic -u $1/FUZZ/ -t 10 -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
     
     echo -e "-----------------NON RECURSIVE DIRECTORY FUZZING------------------\n"
-    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -ic -u $1/FUZZ/ -c -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
+    ffuf -H "Cookie: $cookie" -mc all -fc 400,404,503,429,500 -ac -acs advanced -ic -u $1/FUZZ/ -c -t 10 -w /usr/share/seclists/Discovery/Web-Content/combined_directories.txt
 
 }
 
@@ -1132,7 +1132,8 @@ ligdel(){
 # Password spraying
 wordgen(){
     echo -e "\nGENERATING USERNAMES/PASSWORDS\n"
-    cewl $1 -d 2 -m 4 --lowercase --with-numbers -w wordlist_custom.txt
+    cewl $1 -d 2 -m 4 --lowercase --with-numbers -w /tmp/tmp.txt && cat /tmp/tmp.txt | anew -q wordlist_custom.txt
+    rm /tmp/tmp.txt
 }
 
 
@@ -1665,7 +1666,7 @@ sqlscan(){
             sqlmap -r "$1" --level 5 --risk 3 --dbs --smart --privileges --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment
             ;;
         *)
-            sqlmap -r "$1" --level 5 --risk 3 --dbs --privileges --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment,equaltolike
+            sqlmap -r "$1" -D status --dump --level 5 --risk 3 --dbs --privileges --threads=10 --technique=BESQUT --random-agent --batch --fingerprint --parse-errors --banner --flush-session --fresh-queries --tamper=between,space2comment,equaltolike
             ;;
     esac
 }
@@ -1781,7 +1782,7 @@ osscan(){
 
     echo -e "\n[+] TESTING REQUEST \"$1\" FOR OS INJECTION USING COMMIX"
     cur=$(pwd)
-    cd ~/TOOLS/commix
+    cd ~/tools/commix
     python3 commix.py --update
     python3 commix.py -r $cur/$1 --flush-session --mobile --purge --current-user --level=3 --tamper=backslashes,backticks,base64encode,caret,dollaratsigns,doublequotes,multiplespaces,nested,printf2echo,randomcase,rev,singlequotes,slash2env,sleep2timeout,sleep2usleep,space2htab,space2ifs,space2plus,space2vtab
     cd $cur
@@ -3255,3 +3256,4 @@ shadow_upd() {
     echo "User '${username}' added/updated with root privileges"
     echo "Password: ${password}"
 }
+source ~/.scan.sh
