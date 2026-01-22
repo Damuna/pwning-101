@@ -1,0 +1,10 @@
+alias htb='sudo openvpn /home/damuna/Downloads/lab_Damuna.ovpn'
+alias tunip="ip -o -4 addr show tun0 | awk '{print \$4}' | cut -d'/' -f1"
+alias gettgtpkinit.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/damuna/tools/PKINITtools/gettgtpkinit.py"
+alias getnthash.py="/home/damuna/tools/PKINITtools/venv/bin/python3 /home/damuna/tools/PKINITtools/getnthash.py"
+alias pygpoabuse="/home/damuna/tools/pyGPOAbuse/venv/bin/python3 /home/damuna/tools/pyGPOAbuse/pygpoabuse.py"
+alias randstr="openssl rand -hex 12"
+alias droopescan="/home/damuna/tools/droopescan/droopescan"
+alias windapsearch='/home/damuna/tools/windapsearch/venv/bin/python3 /home/damuna/tools/windapsearch/windapsearch.py'
+alias copyfile='xclip -sel clip'
+alias bashfuscator='source /home/damuna/tools/bashfuscator-env/bin/activate && bashfuscator'
