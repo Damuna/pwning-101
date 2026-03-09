@@ -165,26 +165,18 @@ webdavserv(){
 # Start Ligolo Proxy
 ligstart(){
     chnic
-    mkdir -p ./LIGOLO_DATA && cd ./LIGOLO_DATA
     local port="${1:-11601}"
-
-    echo -e "\n[+] COPYING LIGOLO AGENTS IN DATA DIRECTORY\n"
-    cp /home/damuna/tools/LIGOLO_AGENTS/agent .
-    cp /home/damuna/tools/LIGOLO_AGENTS/agent.exe .
 
     echo -e "\n[+] OPENING LIGOLO PROXY ON \"$ip:$port\"\n"
     echo -e "\t./agent -connect $ip:$port -ignore-cert\n"
-    ligcreate ligolo >/dev/null
     sudo ligolo-proxy -selfcert -nobanner -laddr "$ip:$port"
-    cd ..
-    ligdel ligolo
-    sudo rm -rf ./LIGOLO_DATA
 }
 
 ligcreate(){
     usr=$(whoami)
     sudo ip tuntap add user $usr mode tun $1
     sudo ip link set $1 up
+    sudo ip route add $2 dev $1 
 }
 
 ligdel(){
@@ -529,7 +521,7 @@ metash(){
 ssp(){
     fileout=$(echo "$1" | tr -d ' ' | tr -d '/')
     echo -e "\n[+] SEARCHING CVE POCs FOR \"$1\"\n"
-    vulnx search $1 --limit 100 --silent "poc_count:>0" --json | jq '.results[] | {
+    vulnx search $1 --limit 10000 --silent "poc_count:>0" --json | jq '.results[] | {
     CVE_ID: .cve_id,
     Vulnerability_Type: .vulnerability_type,
     Description: .description,

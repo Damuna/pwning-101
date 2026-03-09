@@ -114,7 +114,6 @@ pfx2key(){
     echo "\n SAVED ${filename%.*}.key and ${filename%.*}.crt"
 }
 
-# SMB share mount
 smbmount() {
     local ip="" user="" pass="" share=""
     
@@ -149,11 +148,11 @@ smbmount() {
 
     local mount_point="/mnt/$share"
     sudo mkdir -p "$mount_point"
-    sudo mount -t cifs "//$ip/$share" "$mount_point" -o username="$user",password="$pass"
+    sudo mount -t cifs "//$ip/$share" "$mount_point" -o username="$user",password="$pass",guest
 
-    if mount | grep -q "$mount_point"; then
+    if mount | grep -qF "$mount_point"; then
         echo "Successfully mounted //$ip/$share at $mount_point"
-        cd $mount_point
+        cd "$mount_point"
     else
         echo "Failed to mount //$ip/$share"
         return 1
